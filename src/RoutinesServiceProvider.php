@@ -14,9 +14,11 @@ use Padosoft\Routines\Console\ListCommand;
 use Padosoft\Routines\Console\TickCommand;
 use Padosoft\Routines\Contracts\Delegation\RoutineDelegationBroker;
 use Padosoft\Routines\Contracts\Escalation\RoutineEscalator;
+use Padosoft\Routines\Contracts\Lifecycle\RoutineLifecycle;
 use Padosoft\Routines\Delegation\NullDelegationBroker;
 use Padosoft\Routines\Escalation\LoggingEscalator;
 use Padosoft\Routines\Http\Controllers\WebhookController;
+use Padosoft\Routines\Lifecycle\RoutineSuspender;
 use Padosoft\Routines\Scheduling\RoutineDispatcher;
 use Padosoft\Routines\Scheduling\RoutineScheduler;
 use Padosoft\Routines\Support\Cfg;
@@ -64,6 +66,11 @@ final class RoutinesServiceProvider extends PackageServiceProvider
             catchUpCap: Cfg::int('routines.catch_up_cap', 25),
             retryBaseSeconds: Cfg::int('routines.retry_base_seconds', 60),
         ));
+
+        // Il porto che un componente di sicurezza usa per fermare una routine. `bindIf`: chi ha
+        // regole proprie su cosa significhi sospendere (un'approvazione, una notifica al
+        // proprietario) sostituisce l'implementazione senza toccare chi la chiama.
+        $this->app->bindIf(RoutineLifecycle::class, fn (Application $app) => new RoutineSuspender($app->make(Events::class)));
 
         $this->app->singleton(RoutineManager::class);
         $this->app->singleton(EventTrigger::class);
