@@ -44,6 +44,7 @@ use Padosoft\Routines\Contracts\Target\TargetOutcome;
  * @property Carbon|null $escalated_at
  * @property string|null $escalation_error
  * @property Carbon|null $retry_at
+ * @property Routine|null $routine
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */

@@ -76,14 +76,10 @@ final class EventTrigger
             return is_array($custom) ? $this->stringKeyed($custom) : [];
         }
 
-        $out = [];
-        foreach (get_object_vars($payload) as $key => $value) {
-            if (is_scalar($value) || $value === null) {
-                $out[$key] = $value;
-            }
-        }
-
-        return $out;
+        return $this->stringKeyed(array_filter(
+            get_object_vars($payload),
+            static fn (mixed $value): bool => is_scalar($value) || $value === null,
+        ));
     }
 
     /**
