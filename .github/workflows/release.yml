@@ -1,0 +1,32 @@
+name: release
+
+# Autonomous, on-demand release. Dispatch with a version input; the runner creates the tag AND the
+# GitHub Release at the current default-branch commit using the built-in GITHUB_TOKEN — no local tag
+# push needed, so it works from restricted environments. Packagist auto-updates from the webhook.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to create, e.g. v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag + GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "$VERSION" \
+            --target "${{ github.sha }}" \
+            --title "$VERSION" \
+            --generate-notes

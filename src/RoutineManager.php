@@ -1,0 +1,206 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Padosoft\Routines;
+
+use Cron\CronExpression;
+use Padosoft\Routines\Contracts\Execution\FireReason;
+use Padosoft\Routines\Models\Routine;
+use Padosoft\Routines\Models\RoutineRun;
+use Padosoft\Routines\Scheduling\RoutineDispatcher;
+use Padosoft\Routines\Scheduling\RoutineScheduler;
+use Padosoft\Routines\Targets\TargetRegistry;
+
+/**
+ * Il punto d'ingresso applicativo: creare, modificare, lanciare, fermare una routine.
+ *
+ * Esiste per una ragione sola, e vale la pena scriverla: **la validazione del payload avviene qui,
+ * alla creazione, e non al fire**. Un `Routine::create()` diretto salterebbe il bersaglio, e la
+ * routine scoprirebbe di essere rotta alle 3:00, dentro un log che nessuno legge, in un momento in
+ * cui non c'è nessuno a cui dirlo. Passare da qui è ciò che sposta l'errore dal log al form.
+ */
+final class RoutineManager
+{
+    public function __construct(
+        private readonly TargetRegistry $registry,
+        private readonly RoutineScheduler $scheduler,
+        private readonly RoutineDispatcher $dispatcher,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     *
+     * @throws InvalidRoutine se il payload non regge, o lo schedule non è calcolabile
+     */
+    public function create(array $attributes): Routine
+    {
+        $this->assertValid($attributes);
+
+        $routine = new Routine;
+        $routine->fill($this->fillable($attributes));
+        $routine->save();
+
+        $this->refreshSchedule($routine);
+
+        return $routine;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     *
+     * @throws InvalidRoutine
+     */
+    public function update(Routine $routine, array $attributes): Routine
+    {
+        $merged = array_merge([
+            'target_type' => $routine->target_type,
+            'target_payload' => $routine->target_payload,
+            'trigger_kind' => $routine->trigger_kind,
+            'cron' => $routine->cron,
+            'once_at' => $routine->once_at,
+            'timezone' => $routine->timezone,
+        ], $attributes);
+
+        $this->assertValid($merged);
+
+        $routine->fill($this->fillable($attributes));
+        $routine->save();
+
+        // Cambiare lo schedule DEVE ricalcolare il prossimo fire: lasciarlo com'era significa che
+        // l'utente ha modificato l'orario e la routine continua a girare al vecchio, in silenzio.
+        $this->refreshSchedule($routine);
+
+        return $routine;
+    }
+
+    /** Ricalcola `next_run_at` a partire da adesso. */
+    public function refreshSchedule(Routine $routine, ?\DateTimeImmutable $now = null): void
+    {
+        if (! $routine->statusEnum()->isRunnable()) {
+            return;
+        }
+        $routine->forceFill(['next_run_at' => $this->scheduler->nextRunAt($routine, $now)])->save();
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    public function fireNow(Routine $routine, array $input = [], ?string $idempotencyKey = null): ?RoutineRun
+    {
+        return $this->dispatcher->fireNow($routine, $input, FireReason::Manual, $idempotencyKey);
+    }
+
+    public function pause(Routine $routine): void
+    {
+        $routine->pause();
+    }
+
+    public function resume(Routine $routine): void
+    {
+        $routine->resume();
+        $this->refreshSchedule($routine);
+    }
+
+    public function end(Routine $routine, string $reason = 'ended_by_user'): void
+    {
+        $routine->end($reason);
+    }
+
+    /**
+     * La preview dei prossimi fire, nel fuso del proprietario.
+     *
+     * Serve alla UI, e non è un lusso: "0 6 * * 2-6" non dice niente a nessuno, mentre cinque date
+     * scritte in chiaro fanno vedere subito che l'orario è sbagliato di un fuso — prima che la
+     * routine giri per un mese all'ora sbagliata.
+     *
+     * @return list<string>
+     */
+    public function preview(Routine $routine, int $count = 5): array
+    {
+        if (! is_string($routine->cron) || $routine->cron === '' || ! CronExpression::isValidExpression($routine->cron)) {
+            return [];
+        }
+
+        $out = [];
+        $tz = new \DateTimeZone($routine->timezone);
+        $cursor = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->setTimezone($tz);
+        $expression = new CronExpression($routine->cron);
+
+        for ($i = 0; $i < $count; $i++) {
+            $next = \DateTimeImmutable::createFromMutable($expression->getNextRunDate($cursor, 0, false));
+            $out[] = $next->format('Y-m-d H:i');
+            $cursor = $next;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     *
+     * @throws InvalidRoutine
+     */
+    private function assertValid(array $attributes): void
+    {
+        $type = $attributes['target_type'] ?? null;
+        if (! is_string($type) || ! $this->registry->has($type)) {
+            throw InvalidRoutine::fromErrors([
+                'target_type' => [is_string($type) && $type !== ''
+                    ? "Nessun bersaglio registrato per il tipo \"{$type}\"."
+                    : 'Indica il tipo di bersaglio.'],
+            ]);
+        }
+
+        $payload = $attributes['target_payload'] ?? [];
+        $result = $this->registry->get($type)->validate(is_array($payload) ? $payload : []);
+        if (! $result->valid) {
+            throw InvalidRoutine::fromValidation($result);
+        }
+
+        $this->assertSchedule($attributes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     *
+     * @throws InvalidRoutine
+     */
+    private function assertSchedule(array $attributes): void
+    {
+        $kind = $attributes['trigger_kind'] ?? 'cron';
+        $tz = $attributes['timezone'] ?? 'UTC';
+
+        if (is_string($tz) && ! in_array($tz, timezone_identifiers_list(), true)) {
+            throw InvalidRoutine::fromErrors(['timezone' => ["Fuso orario sconosciuto: \"{$tz}\"."]]);
+        }
+
+        if ($kind === 'cron') {
+            $cron = $attributes['cron'] ?? null;
+            if (! is_string($cron) || $cron === '' || ! CronExpression::isValidExpression($cron)) {
+                throw InvalidRoutine::fromErrors(['cron' => ['Espressione cron non valida.']]);
+            }
+        }
+
+        if ($kind === 'once_at' && ($attributes['once_at'] ?? null) === null) {
+            throw InvalidRoutine::fromErrors(['once_at' => ["Indica l'istante di esecuzione."]]);
+        }
+
+        if ($kind === 'event' && ! is_string($attributes['event_name'] ?? null)) {
+            throw InvalidRoutine::fromErrors(['event_name' => ["Indica l'evento che fa partire la routine."]]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function fillable(array $attributes): array
+    {
+        // `status` non è qui apposta: si passa da pause()/suspend()/resume()/end(), che hanno
+        // regole diverse fra loro. Vedi Routine.
+        unset($attributes['status'], $attributes['next_run_at'], $attributes['lock_token'], $attributes['locked_until']);
+
+        return $attributes;
+    }
+}

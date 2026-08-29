@@ -1,0 +1,60 @@
+{
+    "name": "padosoft/laravel-routines",
+    "description": "Scheduled, manual and webhook-triggered agentic routines for Laravel \u2014 with delegated identity, budget ceilings and a human reachable when a routine hits something it wasn't authorized to do.",
+    "keywords": [
+        "laravel",
+        "routines",
+        "scheduler",
+        "cron",
+        "automation",
+        "agentic",
+        "ai"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "dragonmantank/cron-expression": "^3.3",
+        "illuminate/console": "^11.0|^12.0|^13.0",
+        "illuminate/database": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "padosoft/laravel-routines-contracts": "^1.0",
+        "spatie/laravel-package-tools": "^1.16"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-laravel": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Padosoft\\Routines\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Padosoft\\Routines\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Padosoft\\Routines\\RoutinesServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "analyse": "phpstan analyse",
+        "format": "pint"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}
