@@ -9,6 +9,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Padosoft\Routines\Budget\BudgetGuard;
 use Padosoft\Routines\Contracts\Consent\MandateExceeded;
 use Padosoft\Routines\Contracts\Delegation\DelegationUnavailable;
 use Padosoft\Routines\Contracts\Delegation\RoutineDelegationBroker;
@@ -57,6 +58,7 @@ final class RoutineDispatcher
         private readonly Events $events,
         private readonly RoutineDelegationBroker $delegation,
         private readonly RoutineEscalator $escalator,
+        private readonly BudgetGuard $budget,
         /** Per quanto un worker tiene il lock prima che sia considerato morto. */
         private readonly int $lockSeconds = 900,
         /** Quante occorrenze perse si recuperano al massimo, per non trasformare un downtime in uno sciame. */
@@ -394,14 +396,14 @@ final class RoutineDispatcher
         $configured = $routine->budget_per_run !== null ? (float) $routine->budget_per_run : null;
         $mandate = $routine->mandateObject()?->budgetCeiling;
 
-        if ($configured === null) {
-            return $mandate;
-        }
-        if ($mandate === null) {
-            return $configured;
-        }
+        $period = $this->budget->remaining($routine);
 
-        return min($configured, $mandate);
+        $candidates = array_values(array_filter(
+            [$configured, $mandate, $period],
+            static fn (?float $v): bool => $v !== null,
+        ));
+
+        return $candidates === [] ? null : min($candidates);
     }
 
     /** Il testo della domanda quando il bersaglio ha lanciato invece di comporlo lui. */
@@ -465,6 +467,17 @@ final class RoutineDispatcher
             $this->closeRun($run, TargetResult::failed($e->getMessage()), retryable: false);
             $routine->suspend('target_not_registered');
             $this->events->dispatch(new RoutineSuspended($routine, 'target_not_registered', $e->getMessage()));
+
+            return;
+        }
+
+        // Il tetto, prima del lavoro. Un controllo solo a posteriori scopre lo sforamento quando i
+        // soldi sono gia' spesi.
+        if (! $this->budget->allows($routine, $now)) {
+            $message = $this->budget->exhaustedMessage($routine, $now);
+            $this->closeRun($run, TargetResult::skipped($message), retryable: false);
+            $routine->suspend('budget_exhausted');
+            $this->events->dispatch(new RoutineSuspended($routine, 'budget_exhausted', $message));
 
             return;
         }
@@ -534,6 +547,15 @@ final class RoutineDispatcher
         $this->closeRun($run, $result, retryable: $run->attempt < $routine->max_attempts);
 
         $routine->forceFill(['last_fired_at' => $now])->save();
+
+        // E dopo, perche' il fire che sfora il tetto e' proprio quello che lo scopre. Sospendere
+        // invece di saltare: saltare vorrebbe dire ritrovare lo stesso tetto superato ogni ora
+        // per tutto il resto del mese.
+        if ($result->cost !== null && ! $this->budget->allows($routine->fresh() ?? $routine, $now)) {
+            $message = $this->budget->exhaustedMessage($routine, $now);
+            $routine->suspend('budget_exhausted');
+            $this->events->dispatch(new RoutineSuspended($routine, 'budget_exhausted', $message));
+        }
 
         if ($result->outcome === TargetOutcome::Paused) {
             $run->refresh();

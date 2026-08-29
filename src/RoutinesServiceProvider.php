@@ -8,6 +8,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Events\Dispatcher as Events;
 use Illuminate\Support\Facades\Route;
+use Padosoft\Routines\Budget\BudgetGuard;
 use Padosoft\Routines\Console\ListCommand;
 use Padosoft\Routines\Console\TickCommand;
 use Padosoft\Routines\Contracts\Delegation\RoutineDelegationBroker;
@@ -39,6 +40,7 @@ final class RoutinesServiceProvider extends PackageServiceProvider
         // metà del sistema, e il sintomo sarebbe una routine "non eseguibile" senza motivo.
         $this->app->singleton(TargetRegistry::class);
         $this->app->singleton(RoutineScheduler::class);
+        $this->app->singleton(BudgetGuard::class);
 
         // Entrambi hanno un default che NON simula la funzione mancante: il broker nullo lancia
         // invece di emettere un token dell'applicazione, e l'escalator di default scrive un
@@ -53,6 +55,7 @@ final class RoutinesServiceProvider extends PackageServiceProvider
             events: $app->make(Events::class),
             delegation: $app->make(RoutineDelegationBroker::class),
             escalator: $app->make(RoutineEscalator::class),
+            budget: $app->make(BudgetGuard::class),
             lockSeconds: (int) config('routines.lock_seconds', 900),
             catchUpCap: (int) config('routines.catch_up_cap', 25),
             retryBaseSeconds: (int) config('routines.retry_base_seconds', 60),
