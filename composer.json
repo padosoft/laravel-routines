@@ -65,6 +65,7 @@
         "padosoft/laravel-iam-agents": "Fa girare le routine con identita' delegata (sub + act) e autorita' = intersezione stretta, rivalutata a ogni fire.",
         "padosoft/laravel-rebel-channels": "Porta su Telegram/WhatsApp/SMS/voce la domanda di una routine che si e' fermata.",
         "padosoft/laravel-ai-finops": "Tetti di spesa per fire e per periodo, con sospensione automatica.",
-        "padosoft/laravel-routines-admin": "Il pannello: schedule, ledger, mandati e la coda di cio' che aspetta una risposta."
+        "padosoft/laravel-routines-admin": "Il pannello: schedule, ledger, mandati e la coda di cio' che aspetta una risposta.",
+        "phpunit/phpunit": "Required to use the shipped target-contract kit (Padosoft\\\\Routines\\\\Testing\\\\AssertsTargetContract) in your own test suite."
     }
 }

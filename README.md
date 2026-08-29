@@ -396,6 +396,8 @@ php artisan routines:list --status=active
 | `RoutineFinished` | Esito noto, **qualunque** esso sia (uno solo, così nessuno se ne dimentica uno) |
 | `RoutinePaused` | Serve un umano. È qui che si aggancia l'escalation |
 | `RoutineSuspended` | Il sistema l'ha fermata: bersaglio sparito, budget esaurito, anomalia |
+| `RoutineResolved` | Un umano ha risposto. Emesso **prima** che il lavoro riprenda: chi registra la decisione non deve aspettarne l'esito |
+| `RoutineMandateGranted` | Concesso il consenso permanente, con la sua evidenza (confirmation id, AAL) |
 
 ---
 
@@ -408,7 +410,8 @@ php artisan routines:list --status=active
 | [`laravel-rebel-channels`](https://github.com/padosoft/laravel-rebel-channels) | L'escalation su Telegram / WhatsApp / SMS / voce quando una routine si ferma |
 | [`laravel-ai-finops`](https://github.com/padosoft/laravel-ai-finops) | Tetti di spesa per fire e per periodo, con sospensione automatica |
 | [`laravel-flow`](https://github.com/padosoft/laravel-flow) · [`laravel-flow-ai`](https://github.com/padosoft/laravel-flow-ai) | `FlowTarget` e `AgentTarget`: una routine lancia un grafo o un agente |
-| [`laravel-ai-act-compliance`](https://github.com/padosoft/laravel-ai-act-compliance) | Le routine agentiche come voci del registro di sorveglianza umana (art. 14) |
+| [`laravel-ai-act-compliance`](https://github.com/padosoft/laravel-ai-act-compliance) | Il mandato come record di sorveglianza art. 14 (col digest del payload), la routine nel registro rischi art. 6, ogni pausa tracciata fino alla risposta |
+| [`laravel-rebel-ai-guard`](https://github.com/padosoft/laravel-rebel-ai-guard) | Anomalie sul ledger dei fire: raffica, fallimenti a ripetizione, mandato sondato, e **domande senza risposta** — con sospensione automatica opzionale |
 
 Nessuna è obbligatoria: senza nulla installato, il pacchetto è uno scheduler che non perde e non
 duplica esecuzioni.
@@ -424,6 +427,41 @@ composer test
 I test non coprono il percorso felice — coprono i casi che rompono gli scheduler veri: due worker
 concorrenti, un lock di un worker morto, entrambe le direzioni dell'ora legale, un downtime di sei
 ore, un bersaglio disinstallato, un'eccezione non prevista, un webhook consegnato due volte.
+
+### Il contratto del tuo bersaglio, in forma eseguibile
+
+I test qui sopra provano che il **motore** mantiene le sue garanzie. Il bersaglio lo scrivi tu, e
+le regole che lo rendono sicuro vivrebbero altrimenti solo nella prosa di questo README. Il
+pacchetto ne spedisce la versione eseguibile:
+
+```php
+use Padosoft\Routines\Testing\TargetContract;
+
+final class InvoiceReminderTargetTest extends TestCase
+{
+    public function test_it_respects_the_routine_target_contract(): void
+    {
+        TargetContract::assertAll(
+            new InvoiceReminderTarget(...),
+            validPayload: ['template' => 'reminder'],
+            invalidPayload: ['template' => ''],
+            outOfMandateInput: ['action' => 'invoice.write_off'],
+        );
+    }
+}
+```
+
+Quattro asserzioni, e ciascuna corrisponde a un modo di fallire **in silenzio**:
+
+| Asserzione | Il guasto che previene |
+|---|---|
+| Il payload viene validato, con l'errore sul campo | Un payload rotto scoperto alle 3:00 in un log che nessuno legge, invece che nel form |
+| Il descrittore dichiara le classi di azione | Nessun mandato può autorizzarlo, e nessuna pausa può dire a un umano **che cosa** sta approvando |
+| Riesecuzione alla stessa chiave di idempotenza → stesso esito | Un timeout di rete diventa una seconda email davvero mandata |
+| Fuori dal mandato ci si **ferma** (`paused` o `MandateExceeded`), non si fallisce | Fallire fa arrendere la routine in silenzio; riuscire significa aver agito senza permesso |
+
+Ogni asserzione del kit ha, nella suite del pacchetto, un test che la vede **fallire** sul
+bersaglio che la viola: un kit che passa su qualsiasi cosa non prova niente.
 
 ---
 
