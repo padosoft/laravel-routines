@@ -31,7 +31,6 @@ final class RoutinesServiceProvider extends PackageServiceProvider
         $package
             ->name('routines')
             ->hasConfigFile('routines')
-            ->hasMigration('create_routines_tables')
             ->hasCommands([TickCommand::class, ListCommand::class]);
     }
 
@@ -69,6 +68,16 @@ final class RoutinesServiceProvider extends PackageServiceProvider
 
     public function packageBooted(): void
     {
+        // `publishesMigrations` e non `hasMigration`: quest'ultimo cerca un file
+        // `create_routines_tables.php.stub` secondo la convenzione di package-tools, mentre qui la
+        // migration e' un normale file datato (cosi' i test del pacchetto possono caricarla con
+        // loadMigrationsFrom, che uno .stub non permette). Il difetto era invisibile finche' non
+        // si installava il pacchetto in un'applicazione vera: `vendor:publish` falliva con «Can't
+        // locate path».
+        $this->publishesMigrations([
+            __DIR__.'/../database/migrations/2026_08_29_000001_create_routines_tables.php' => $this->app->databasePath('migrations/2026_08_29_000001_create_routines_tables.php'),
+        ], 'routines-migrations');
+
         if (config('routines.targets.job.enabled', true)) {
             $this->app->make(TargetRegistry::class)->register(new JobTarget(
                 bus: $this->app->make(Dispatcher::class),
