@@ -137,3 +137,29 @@ it('accetta sia la pausa esplicita sia MandateExceeded', function (): void {
 
     expect(true)->toBeTrue(); // arrivarci senza asserzioni fallite E' l'esito
 });
+
+it('riconosce il caso fuori dal mandato anche quando dipende dal payload, non dall input', function (): void {
+    // Il bersaglio della demo decide da una soglia nella CONFIGURAZIONE, non da un flag del fire.
+    // E' venuto fuori usando il kit su un'applicazione vera: un contratto che sa interrogare una
+    // sola delle due forme copre meta' dei bersagli e tace sull'altra meta'.
+    $target = new class extends WellBehavedTarget
+    {
+        public function fire(RoutineExecution $execution): TargetResult
+        {
+            if ((int) ($execution->payload['write_off_days'] ?? 9999) < 500) {
+                throw new MandateExceeded('demo.destroy');
+            }
+
+            return TargetResult::succeeded('fatto');
+        }
+    };
+
+    TargetContract::assertAll(
+        $target,
+        validPayload: ['template' => 'x', 'write_off_days' => 1000],
+        invalidPayload: ['template' => ''],
+        outOfMandatePayload: ['template' => 'x', 'write_off_days' => 365],
+    );
+
+    expect(true)->toBeTrue();
+});

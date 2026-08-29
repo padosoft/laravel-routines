@@ -460,7 +460,9 @@ final class InvoiceReminderTargetTest extends TestCase
             new InvoiceReminderTarget(...),
             validPayload: ['template' => 'reminder'],
             invalidPayload: ['template' => ''],
-            outOfMandateInput: ['action' => 'invoice.write_off'],
+            // Il caso «fuori dal mandato» si esprime come input del fire oppure come
+            // configurazione, perche' i bersagli reali decidono in entrambi i modi:
+            outOfMandatePayload: ['template' => 'reminder', 'write_off_days' => 365],
         );
     }
 }

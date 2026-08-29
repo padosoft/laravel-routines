@@ -73,7 +73,9 @@ public function test_it_respects_the_routine_target_contract(): void
         new InvoiceReminderTarget(...),
         validPayload: ['template' => 'reminder'],
         invalidPayload: ['template' => ''],
-        outOfMandateInput: ['action' => 'invoice.write_off'],
+        // Either form: some targets decide from the fire's input, others from the routine's
+        // configuration. Pass whichever applies to yours, or both.
+        outOfMandatePayload: ['template' => 'reminder', 'write_off_days' => 365],
     );
 }
 ```

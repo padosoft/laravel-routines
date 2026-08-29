@@ -45,25 +45,37 @@ use PHPUnit\Framework\Assert;
 final class TargetContract
 {
     /**
-     * Esegue l'intero contratto. `$outOfMandateInput` e' opzionale: passalo con un input che il
-     * bersaglio riconosce come fuori dal mandato per verificare che si FERMI invece di fallire.
+     * Esegue l'intero contratto.
+     *
+     * Il caso "fuori dal mandato" e' opzionale e si esprime in DUE modi, perche' i bersagli reali
+     * decidono in due modi: alcuni guardano l'input del singolo fire (un flag, un id), altri la
+     * configurazione della routine (una soglia nel payload). Passa quello che vale per il tuo — o
+     * entrambi. Se non passi nessuno dei due, quella parte del contratto non viene verificata.
      *
      * @param  array<string, mixed>  $validPayload  una configurazione che il bersaglio accetta
+     *                                              E che NON esce dal mandato (altrimenti anche
+     *                                              il controllo di idempotenza finirebbe in pausa)
      * @param  array<string, mixed>  $invalidPayload  una che deve rifiutare, con l'errore sul campo
-     * @param  array<string, mixed>|null  $outOfMandateInput
+     * @param  array<string, mixed>|null  $outOfMandateInput  input di un fire che eccede il mandato
+     * @param  array<string, mixed>|null  $outOfMandatePayload  configurazione che eccede il mandato
      */
     public static function assertAll(
         RoutineTarget $target,
         array $validPayload,
         array $invalidPayload,
         ?array $outOfMandateInput = null,
+        ?array $outOfMandatePayload = null,
     ): void {
         self::assertValidatesItsPayload($target, $validPayload, $invalidPayload);
         self::assertDeclaresItsActionClasses($target);
         self::assertIsIdempotentAcrossRetries($target, $validPayload);
 
-        if ($outOfMandateInput !== null) {
-            self::assertPausesOutsideTheMandate($target, $validPayload, $outOfMandateInput);
+        if ($outOfMandateInput !== null || $outOfMandatePayload !== null) {
+            self::assertPausesOutsideTheMandate(
+                $target,
+                $outOfMandatePayload ?? $validPayload,
+                $outOfMandateInput ?? [],
+            );
         }
     }
 
