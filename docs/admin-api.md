@@ -100,3 +100,30 @@ show a person without reworking it.
 
 A panel saying "last tick 47 minutes ago" has informed you. One saying "the scheduler is not
 running, check the cron" has solved it.
+
+## The panel that consumes it
+
+[`padosoft/laravel-routines-admin`](https://github.com/padosoft/laravel-routines-admin) is a React
+SPA built entirely on this API — no server-side state, no Blade beyond the mount view. It is the
+reference consumer, but not a privileged one: everything it does is available to anything else that
+speaks HTTP.
+
+```bash
+composer require padosoft/laravel-routines-admin
+php artisan vendor:publish --tag=routines-admin-assets
+```
+
+The separation is deliberate. If the panel is replaced tomorrow the API stays, and with it every
+integration built on top — the same split `laravel-iam-console` has from `laravel-iam-server`.
+
+Two things the panel relies on, and that any other client should too:
+
+- **The server composes every human-readable string.** `schedule_human`, `suspension_reason_label`,
+  `tick_diagnosis` and a paused fire's `message` are evidence, not copy. A client that translated
+  `target_not_registered` on its own would translate it differently from the CLI, the notification
+  email and the audit — and three people looking at the same event would read three different
+  things.
+- **`POST /schedule/preview` needs no routine.** It exists so a wizard can show five real dates
+  *before* there is anything to save, which is what stops the product's most common bug: a schedule
+  that looks obviously right and fires at another hour because the routine's timezone is not the
+  author's.
