@@ -138,10 +138,14 @@ final class RoutineDispatcher
             }
 
             $fired = 0;
+            $last = count($occurrences) - 1;
             foreach ($occurrences as $i => $occurrence) {
-                $reason = $i === 0 && $occurrence >= $now->modify('-1 minute')
-                    ? FireReason::Scheduled
-                    : FireReason::CatchUp;
+                // L'ultima occorrenza e' quella dovuta adesso; le precedenti sono recuperi.
+                // Deciso sulla POSIZIONE e non su un confronto di orari: la versione precedente
+                // guardava se l'occorrenza fosse entro un minuto da adesso, e con `next_run_at`
+                // impostato a un minuto fa la risposta cambiava a seconda dei microsecondi - il
+                // motivo scritto nel ledger diventava non deterministico.
+                $reason = $i === $last ? FireReason::Scheduled : FireReason::CatchUp;
 
                 $run = $this->openRun(
                     routine: $routine,

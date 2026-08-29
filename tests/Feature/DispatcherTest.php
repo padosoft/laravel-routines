@@ -286,3 +286,31 @@ it('un fire in pausa resta aperto e porta con sé il riferimento per riprendere'
         // Una pausa non si ritenta con un backoff: aspetta una persona.
         ->and($run->retry_at)->toBeNull();
 });
+
+it('il motivo del fire e deterministico: l ultima occorrenza e la dovuta, le precedenti recuperi', function (): void {
+    // La versione precedente decideva confrontando l'occorrenza con "adesso meno un minuto": con
+    // next_run_at impostato a un minuto fa, la risposta cambiava a seconda dei microsecondi, e il
+    // motivo scritto nel ledger - che un revisore legge per distinguere un cron da un recupero -
+    // non era deterministico.
+    $target = register(new RecordingTarget);
+    $r = due(['cron' => '0 * * * *', 'missed_run_policy' => 'catch_up']);
+    $r->forceFill(['next_run_at' => now()->subHours(3)->startOfHour()])->save();
+
+    app(RoutineDispatcher::class)->dispatch($r);
+
+    $reasons = RoutineRun::query()->orderBy('scheduled_for')->pluck('reason')->all();
+
+    expect(count($reasons))->toBeGreaterThanOrEqual(3)
+        ->and(array_slice($reasons, 0, -1))->each->toBe('catch_up')
+        ->and(end($reasons))->toBe('scheduled');
+});
+
+it('una sola occorrenza dovuta e sempre `scheduled`, mai un recupero', function (): void {
+    $target = register(new RecordingTarget);
+    $r = due();
+    $r->forceFill(['next_run_at' => now()->subMinute()])->save();
+
+    app(RoutineDispatcher::class)->dispatch($r);
+
+    expect(RoutineRun::first()->reason)->toBe('scheduled');
+});
