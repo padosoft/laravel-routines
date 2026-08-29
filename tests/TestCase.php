@@ -30,5 +30,12 @@ abstract class TestCase extends Orchestra
             'prefix' => '',
         ]);
         $app['config']->set('routines.retry_base_seconds', 60);
+        // Le rotte si registrano al boot, prima di qualsiasi beforeEach: il middleware va
+        // neutralizzato QUI, altrimenti i test dell'API sbattono contro il guard invece di
+        // esercitare il controller.
+        $app['config']->set('routines.api.middleware', []);
+        // Testbench non ne imposta una: senza, il middleware di sessione esplode appena si
+        // colpisce una rotta.
+        $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
     }
 }

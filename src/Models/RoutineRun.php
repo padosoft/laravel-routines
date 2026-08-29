@@ -89,6 +89,18 @@ class RoutineRun extends Model
         return $this->outcome === null ? null : TargetOutcome::tryFrom($this->outcome);
     }
 
+    /**
+     * Ferma, in attesa di una risposta umana.
+     *
+     * Distinta da `outcome === paused` da sola, perché un fire già risolto resta `paused` nello
+     * storico: è ciò che è successo, e riscriverlo cancellerebbe l'evidenza che qualcuno aveva
+     * chiesto. Quello che cambia è che ora ha una risposta.
+     */
+    public function isAwaitingHuman(): bool
+    {
+        return $this->outcome === TargetOutcome::Paused->value && $this->resolved_at === null;
+    }
+
     /** Il fire è ancora aperto: partito e mai chiuso. */
     public function isRunning(): bool
     {

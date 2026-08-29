@@ -7,6 +7,7 @@ namespace Padosoft\Routines;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Events\Dispatcher as Events;
+use Illuminate\Support\Facades\Route;
 use Padosoft\Routines\Console\ListCommand;
 use Padosoft\Routines\Console\TickCommand;
 use Padosoft\Routines\Contracts\Delegation\RoutineDelegationBroker;
@@ -67,6 +68,12 @@ final class RoutinesServiceProvider extends PackageServiceProvider
                 bus: $this->app->make(Dispatcher::class),
                 allowed: (array) config('routines.targets.job.allowed', []),
             ));
+        }
+
+        if (config('routines.api.enabled', true)) {
+            Route::prefix((string) config('routines.api.prefix', 'api/routines/v1'))
+                ->middleware((array) config('routines.api.middleware', ['web', 'auth']))
+                ->group(__DIR__.'/Http/routes.php');
         }
 
         if ($this->app->runningInConsole() && config('routines.tick.schedule', true)) {

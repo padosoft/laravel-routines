@@ -46,6 +46,25 @@ return [
 
     /*
     |---------------------------------------------------------------------------
+    | Admin API
+    |---------------------------------------------------------------------------
+    | L'API che alimenta il pannello (padosoft/laravel-routines-admin) e qualsiasi
+    | altro client. Vive QUI e non nel pacchetto del pannello, deliberatamente: se
+    | domani il pannello viene sostituito l'API resta, e con lei tutto cio' che ci
+    | si integra sopra.
+    |
+    | Il middleware e' tuo: `auth` usa il guard web. L'autorizzazione fine passa dal
+    | Gate (routines.read / .write / .fire / .approve) ed e' fail-closed - senza
+    | policy definite si ottiene sola lettura.
+    */
+    'api' => [
+        'enabled' => env('ROUTINES_API_ENABLED', true),
+        'prefix' => env('ROUTINES_API_PREFIX', 'api/routines/v1'),
+        'middleware' => ['web', 'auth'],
+    ],
+
+    /*
+    |---------------------------------------------------------------------------
     | Bersagli
     |---------------------------------------------------------------------------
     */
@@ -68,6 +87,21 @@ return [
             ],
         ],
     ],
+
+    /*
+    |---------------------------------------------------------------------------
+    | Risolutori opzionali
+    |---------------------------------------------------------------------------
+    | Il core non conosce il modello utente della tua applicazione ne' il dominio
+    | dei bersagli, quindi non indovina: senza questi risolutori il pannello mostra
+    | l'identificativo canonico e il riferimento grezzo, che sono comunque veri.
+    | Con essi mostra un'email e un link.
+    |
+    | 'owner_label_resolver'  => fn (string $owner): ?string => ...,
+    | 'external_url_resolver' => fn (string $targetType, string $ref): ?string => ...,
+    */
+    'owner_label_resolver' => null,
+    'external_url_resolver' => null,
 
     /*
     |---------------------------------------------------------------------------

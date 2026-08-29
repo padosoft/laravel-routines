@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Padosoft\Routines\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
+use Padosoft\Routines\Http\Controllers\StatsController;
 use Padosoft\Routines\Scheduling\RoutineDispatcher;
 
 /**
@@ -24,6 +26,11 @@ final class TickCommand extends Command
     {
         $limit = max(1, (int) $this->option('limit'));
         $stats = $dispatcher->tick(limit: $limit);
+
+        // Il battito. Serve alla schermata Salute a rispondere alla domanda piu' frequente di
+        // tutto il prodotto - «perche' non e' partita?» - la cui risposta, nove volte su dieci,
+        // e' che lo scheduler di sistema non sta girando.
+        Cache::put(StatsController::LAST_TICK_KEY, (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM), 86400);
 
         $this->info(sprintf(
             'routines:tick — %d eseguite, %d saltate, %d ritentate.',
