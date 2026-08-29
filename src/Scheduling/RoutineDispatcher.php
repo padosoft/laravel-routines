@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Padosoft\Routines\Scheduling;
 
 use Illuminate\Contracts\Events\Dispatcher as Events;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -689,7 +690,7 @@ final class RoutineDispatcher
         $token = Routine::newLockToken();
         $affected = DB::table('routines')
             ->where('id', $routine->id)
-            ->where(function ($q) use ($now): void {
+            ->where(function (Builder $q) use ($now): void {
                 $q->whereNull('lock_token')->orWhere('locked_until', '<=', $now);
             })
             ->update([
@@ -711,7 +712,7 @@ final class RoutineDispatcher
 
     private function isUniqueViolation(QueryException $e): bool
     {
-        $sqlState = (string) ($e->errorInfo[0] ?? '');
+        $sqlState = $e->errorInfo[0] ?? null;
 
         return $sqlState === '23000' || $sqlState === '23505';
     }

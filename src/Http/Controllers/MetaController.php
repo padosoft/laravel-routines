@@ -18,6 +18,7 @@ use Padosoft\Routines\Http\Support\Permissions;
 use Padosoft\Routines\Http\Support\Problem;
 use Padosoft\Routines\Models\Routine;
 use Padosoft\Routines\Scheduling\RoutineScheduler;
+use Padosoft\Routines\Support\Cfg;
 use Padosoft\Routines\Targets\TargetRegistry;
 
 /**
@@ -44,8 +45,8 @@ final class MetaController
                 'budgets' => class_exists(FinOps::class),
                 'channels' => ! app(RoutineEscalator::class) instanceof LoggingEscalator,
                 'approvals' => Permissions::allows(Permissions::APPROVE),
-                'timezone' => (string) config('app.timezone', 'UTC'),
-                'currency' => (string) config('routines.defaults.currency', 'EUR'),
+                'timezone' => Cfg::string('app.timezone', 'UTC'),
+                'currency' => Cfg::string('routines.defaults.currency', 'EUR'),
                 'can' => Permissions::granted(),
             ],
         ]);
@@ -58,14 +59,11 @@ final class MetaController
             return Problem::forbidden('Non hai il permesso di vedere i bersagli.');
         }
 
-        $counts = Routine::query()
-            ->selectRaw('target_type, count(*) as aggregate')
-            ->groupBy('target_type')
-            ->pluck('aggregate', 'target_type');
+        $counts = $this->routinesPerTarget();
 
         $data = [];
         foreach ($this->registry->all() as $type => $target) {
-            $data[] = $this->describe($type, $target, (int) ($counts[$type] ?? 0));
+            $data[] = $this->describe($type, $target, $counts[$type] ?? 0);
         }
 
         // I tipi USATI ma non registrati vanno mostrati: sono la causa numero uno delle
@@ -82,7 +80,7 @@ final class MetaController
                     'supports_pause' => false,
                     'reports_cost' => false,
                     'registered' => false,
-                    'routines_count' => (int) $count,
+                    'routines_count' => $count,
                 ];
             }
         }
@@ -99,8 +97,9 @@ final class MetaController
     public function preview(Request $request): JsonResponse
     {
         $cron = $request->input('cron');
-        $timezone = $request->input('timezone', config('app.timezone', 'UTC'));
-        $count = min(20, max(1, (int) $request->input('count', 5)));
+        $timezone = $request->input('timezone', Cfg::string('app.timezone', 'UTC'));
+        $rawCount = $request->input('count', 5);
+        $count = min(20, max(1, is_numeric($rawCount) ? (int) $rawCount : 5));
 
         if (! is_string($timezone) || ! in_array($timezone, timezone_identifiers_list(), true)) {
             return Problem::validation('Fuso orario sconosciuto.', ['timezone' => ['Questo fuso non esiste.']]);
@@ -142,6 +141,25 @@ final class MetaController
                 'occurrences' => $occurrences,
             ],
         ]);
+    }
+
+    /**
+     * Quante routine puntano a ciascun tipo di bersaglio.
+     *
+     * @return array<string, int>
+     */
+    private function routinesPerTarget(): array
+    {
+        $out = [];
+        foreach (Routine::query()->selectRaw('target_type, count(*) as aggregate')->groupBy('target_type')->get() as $row) {
+            $type = $row->getAttribute('target_type');
+            $count = $row->getAttribute('aggregate');
+            if (is_string($type)) {
+                $out[$type] = is_numeric($count) ? (int) $count : 0;
+            }
+        }
+
+        return $out;
     }
 
     /** @return array<string, mixed> */

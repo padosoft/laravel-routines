@@ -11,6 +11,7 @@ use Padosoft\Routines\Http\Support\Permissions;
 use Padosoft\Routines\Http\Support\Problem;
 use Padosoft\Routines\Models\Routine;
 use Padosoft\Routines\Models\RoutineRun;
+use Padosoft\Routines\Support\Cfg;
 use Padosoft\Routines\Targets\TargetRegistry;
 
 final class StatsController
@@ -36,7 +37,7 @@ final class StatsController
                 // Primo campo, e non per caso: e' l'unica cosa del pannello che chiede qualcosa a
                 // chi lo sta guardando.
                 'awaiting_human' => (clone $awaiting)->count(),
-                'oldest_awaiting_since' => (clone $awaiting)->orderBy('created_at')->value('created_at')?->toIso8601String(),
+                'oldest_awaiting_since' => (clone $awaiting)->orderBy('created_at')->first()?->created_at?->toIso8601String(),
 
                 'active_routines' => Routine::query()->where('status', 'active')->count(),
                 'paused_routines' => Routine::query()->where('status', 'paused')->count(),
@@ -50,7 +51,7 @@ final class StatsController
 
                 'spend_7d' => (float) RoutineRun::query()->where('created_at', '>=', now()->subDays(7))->sum('cost'),
                 'budget_utilisation' => $this->budgetUtilisation(),
-                'currency' => (string) config('routines.defaults.currency', 'EUR'),
+                'currency' => Cfg::string('routines.defaults.currency', 'EUR'),
             ],
         ]);
     }
@@ -61,7 +62,8 @@ final class StatsController
             return Problem::forbidden('Non hai il permesso di vedere queste statistiche.');
         }
 
-        $days = min(90, max(1, (int) $request->query('days', '30')));
+        $rawDays = $request->query('days', '30');
+        $days = min(90, max(1, is_numeric($rawDays) ? (int) $rawDays : 30));
         $since = now()->subDays($days - 1)->startOfDay();
 
         $rows = RoutineRun::query()
@@ -78,9 +80,11 @@ final class StatsController
         }
         foreach ($rows as $run) {
             $day = $run->created_at?->format('Y-m-d');
-            if ($day !== null && isset($series[$day]) && isset($series[$day][(string) $run->outcome])) {
-                $series[$day][(string) $run->outcome]++;
+            $outcome = $run->outcome;
+            if ($day === null || $outcome === null || ! isset($series[$day][$outcome])) {
+                continue;
             }
+            $series[$day][$outcome]++;
         }
 
         return new JsonResponse(['data' => array_values($series)]);
@@ -114,19 +118,23 @@ final class StatsController
         $stuck = Routine::query()
             ->whereNotNull('lock_token')
             ->where('locked_until', '>', now())
-            ->where('locked_until', '<', now()->addSeconds((int) config('routines.lock_seconds', 900) / 2))
+            ->where('locked_until', '<', now()->addSeconds(intdiv(Cfg::int('routines.lock_seconds', 900), 2)))
             ->limit(50)
             ->get();
 
-        $counts = Routine::query()->selectRaw('target_type, count(*) as aggregate')->groupBy('target_type')->pluck('aggregate', 'target_type');
         $targets = [];
-        foreach ($counts as $type => $count) {
-            $registered = $this->registry->has((string) $type);
+        foreach (Routine::query()->selectRaw('target_type, count(*) as aggregate')->groupBy('target_type')->get() as $row) {
+            $type = $row->getAttribute('target_type');
+            if (! is_string($type)) {
+                continue;
+            }
+            $count = $row->getAttribute('aggregate');
+            $registered = $this->registry->has($type);
             $targets[] = [
-                'type' => (string) $type,
-                'label' => $registered ? $this->registry->get((string) $type)->descriptor()->label : null,
+                'type' => $type,
+                'label' => $registered ? $this->registry->get($type)->descriptor()->label : null,
                 'registered' => $registered,
-                'routines_count' => (int) $count,
+                'routines_count' => is_numeric($count) ? (int) $count : 0,
             ];
         }
 
@@ -146,7 +154,7 @@ final class StatsController
                     'id' => $r->id,
                     'name' => $r->name,
                     'locked_until' => $r->locked_until?->toIso8601String(),
-                    'locked_for_seconds' => (int) config('routines.lock_seconds', 900) - max(0, ($r->locked_until?->getTimestamp() ?? time()) - time()),
+                    'locked_for_seconds' => Cfg::int('routines.lock_seconds', 900) - max(0, ($r->locked_until?->getTimestamp() ?? time()) - time()),
                 ])->values(),
                 'targets' => $targets,
             ],

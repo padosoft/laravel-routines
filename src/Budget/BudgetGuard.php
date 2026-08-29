@@ -57,10 +57,12 @@ final class BudgetGuard
     {
         $now ??= new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
 
-        return (float) RoutineRun::query()
+        $sum = RoutineRun::query()
             ->where('routine_id', $routine->id)
             ->where('created_at', '>=', $this->periodStart($routine, $now))
             ->sum('cost');
+
+        return is_numeric($sum) ? (float) $sum : 0.0;
     }
 
     /**

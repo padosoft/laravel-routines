@@ -46,7 +46,7 @@ final class RoutinePresenter
             'suspension_reason_label' => $this->suspensionLabel($routine),
             'ended_reason' => $routine->ended_reason,
             'target_type' => $routine->target_type,
-            'target_label' => $descriptor?->label ?? $routine->target_type,
+            'target_label' => $descriptor === null ? $routine->target_type : $descriptor->label,
             'target_icon' => $descriptor?->icon,
             'trigger_kind' => $routine->trigger_kind,
             'cron' => $routine->cron,
@@ -217,8 +217,13 @@ final class RoutinePresenter
     private function ownerLabel(string $owner): ?string
     {
         $resolver = config('routines.owner_label_resolver');
+        if (! is_callable($resolver)) {
+            return null;
+        }
 
-        return is_callable($resolver) ? $resolver($owner) : null;
+        $label = $resolver($owner);
+
+        return is_string($label) && $label !== '' ? $label : null;
     }
 
     private function lastOutcome(Routine $routine): ?string
@@ -227,7 +232,7 @@ final class RoutinePresenter
             ->where('routine_id', $routine->id)
             ->whereNotNull('outcome')
             ->latest('created_at')
-            ->value('outcome');
+            ->first()?->outcome;
     }
 
     private function runsIn(Routine $routine, int $hours): int

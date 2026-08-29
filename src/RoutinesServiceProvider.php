@@ -7,6 +7,7 @@ namespace Padosoft\Routines;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Events\Dispatcher as Events;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Padosoft\Routines\Budget\BudgetGuard;
 use Padosoft\Routines\Console\ListCommand;
@@ -18,9 +19,11 @@ use Padosoft\Routines\Escalation\LoggingEscalator;
 use Padosoft\Routines\Http\Controllers\WebhookController;
 use Padosoft\Routines\Scheduling\RoutineDispatcher;
 use Padosoft\Routines\Scheduling\RoutineScheduler;
+use Padosoft\Routines\Support\Cfg;
 use Padosoft\Routines\Targets\JobTarget;
 use Padosoft\Routines\Targets\TargetRegistry;
 use Padosoft\Routines\Triggers\EventTrigger;
+use Psr\Log\LoggerInterface;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -48,18 +51,18 @@ final class RoutinesServiceProvider extends PackageServiceProvider
         // warning invece di ingoiare la domanda. Un default comodo, qui, regalerebbe autorita' o
         // nasconderebbe una routine ferma che nessuno sta aspettando di sbloccare.
         $this->app->bindIf(RoutineDelegationBroker::class, NullDelegationBroker::class);
-        $this->app->bindIf(RoutineEscalator::class, fn ($app) => new LoggingEscalator($app->make('log')));
+        $this->app->bindIf(RoutineEscalator::class, fn (Application $app) => new LoggingEscalator($app->make(LoggerInterface::class)));
 
-        $this->app->singleton(RoutineDispatcher::class, fn ($app) => new RoutineDispatcher(
+        $this->app->singleton(RoutineDispatcher::class, fn (Application $app) => new RoutineDispatcher(
             registry: $app->make(TargetRegistry::class),
             scheduler: $app->make(RoutineScheduler::class),
             events: $app->make(Events::class),
             delegation: $app->make(RoutineDelegationBroker::class),
             escalator: $app->make(RoutineEscalator::class),
             budget: $app->make(BudgetGuard::class),
-            lockSeconds: (int) config('routines.lock_seconds', 900),
-            catchUpCap: (int) config('routines.catch_up_cap', 25),
-            retryBaseSeconds: (int) config('routines.retry_base_seconds', 60),
+            lockSeconds: Cfg::int('routines.lock_seconds', 900),
+            catchUpCap: Cfg::int('routines.catch_up_cap', 25),
+            retryBaseSeconds: Cfg::int('routines.retry_base_seconds', 60),
         ));
 
         $this->app->singleton(RoutineManager::class);
@@ -78,29 +81,29 @@ final class RoutinesServiceProvider extends PackageServiceProvider
             __DIR__.'/../database/migrations/2026_08_29_000001_create_routines_tables.php' => $this->app->databasePath('migrations/2026_08_29_000001_create_routines_tables.php'),
         ], 'routines-migrations');
 
-        if (config('routines.targets.job.enabled', true)) {
+        if (Cfg::bool('routines.targets.job.enabled', true)) {
             $this->app->make(TargetRegistry::class)->register(new JobTarget(
                 bus: $this->app->make(Dispatcher::class),
-                allowed: (array) config('routines.targets.job.allowed', []),
+                allowed: Cfg::classList('routines.targets.job.allowed'),
             ));
         }
 
-        if (config('routines.api.enabled', true)) {
-            Route::prefix((string) config('routines.api.prefix', 'api/routines/v1'))
-                ->middleware((array) config('routines.api.middleware', ['web', 'auth']))
+        if (Cfg::bool('routines.api.enabled', true)) {
+            Route::prefix(Cfg::string('routines.api.prefix', 'api/routines/v1'))
+                ->middleware(array_values(Cfg::array('routines.api.middleware')))
                 ->group(__DIR__.'/Http/routes.php');
         }
 
-        if (config('routines.webhooks.enabled', true)) {
-            Route::prefix((string) config('routines.webhooks.prefix', 'hooks/routines'))
-                ->middleware((array) config('routines.webhooks.middleware', ['throttle:60,1']))
+        if (Cfg::bool('routines.webhooks.enabled', true)) {
+            Route::prefix(Cfg::string('routines.webhooks.prefix', 'hooks/routines'))
+                ->middleware(array_values(Cfg::array('routines.webhooks.middleware')))
                 ->post('/{id}', WebhookController::class)
                 ->name('routines.webhook');
         }
 
-        if ($this->app->runningInConsole() && config('routines.tick.schedule', true)) {
+        if ($this->app->runningInConsole() && Cfg::bool('routines.tick.schedule', true)) {
             $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-                $schedule->command(TickCommand::class, ['--limit' => (int) config('routines.tick.limit', 100)])
+                $schedule->command(TickCommand::class, ['--limit' => Cfg::int('routines.tick.limit', 100)])
                     ->everyMinute()
                     // Il lock per-routine è nel database e regge comunque; questo evita solo di
                     // accumulare processi di tick se una macchina è lenta.

@@ -44,6 +44,8 @@ use Padosoft\Routines\Contracts\Target\TargetOutcome;
  * @property Carbon|null $escalated_at
  * @property string|null $escalation_error
  * @property Carbon|null $retry_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
 class RoutineRun extends Model
 {
@@ -71,6 +73,12 @@ class RoutineRun extends Model
             'cost' => 'float',
             'attempt' => 'integer',
         ];
+    }
+
+    /** Il fire con questo id, o null. Vedi Routine::findById. */
+    public static function findById(string $id): ?self
+    {
+        return static::query()->whereKey($id)->first();
     }
 
     /** @return BelongsTo<Routine, $this> */

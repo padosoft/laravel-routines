@@ -20,21 +20,26 @@ final class RunPresenter
     /** @return array<string, mixed> */
     public function summary(RoutineRun $run): array
     {
+        // La relazione e' garantita dalla foreign key con cascade: un run senza la sua routine non
+        // puo' esistere. Estrarla una volta evita quattro nullsafe che l'analizzatore segnala come
+        // inutili proprio perche' quella garanzia c'e'.
+        $routine = $run->routine;
+
         return [
             'id' => $run->id,
             'routine_id' => $run->routine_id,
-            'routine_name' => $run->routine?->name ?? '—',
+            'routine_name' => $routine->name,
             'reason' => $run->reason,
             'outcome' => $run->outcome,
             'attempt' => $run->attempt,
-            'max_attempts' => $run->routine?->max_attempts ?? 1,
+            'max_attempts' => $routine->max_attempts,
             'scheduled_for' => $run->scheduled_for?->toIso8601String(),
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),
             'duration_ms' => $run->durationMs(),
             'message' => $run->message,
             'cost' => $run->cost,
-            'currency' => $run->routine?->currency ?? 'EUR',
+            'currency' => $routine->currency,
             'retry_at' => $run->retry_at?->toIso8601String(),
         ];
     }
@@ -56,7 +61,7 @@ final class RunPresenter
             'resolved_by' => $run->resolved_by,
             'resolved_at' => $run->resolved_at?->toIso8601String(),
             'resolution_note' => $run->resolution_note,
-            'owner_label' => $run->routine?->owner,
+            'owner_label' => $run->routine->owner,
             'can_approve' => $run->isAwaitingHuman() && Permissions::allows(Permissions::APPROVE),
         ]);
     }
@@ -75,7 +80,7 @@ final class RunPresenter
             return null;
         }
 
-        $url = $resolver($run->routine?->target_type ?? '', $run->external_ref);
+        $url = $resolver($run->routine->target_type, $run->external_ref);
 
         return is_string($url) && $url !== '' ? $url : null;
     }

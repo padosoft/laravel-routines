@@ -260,7 +260,15 @@ final class RoutineManager
         }
 
         $payload = $attributes['target_payload'] ?? [];
-        $result = $this->registry->get($type)->validate(is_array($payload) ? $payload : []);
+        $typed = [];
+        if (is_array($payload)) {
+            foreach ($payload as $key => $value) {
+                if (is_string($key)) {
+                    $typed[$key] = $value;
+                }
+            }
+        }
+        $result = $this->registry->get($type)->validate($typed);
         if (! $result->valid) {
             throw InvalidRoutine::fromValidation($result);
         }

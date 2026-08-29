@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Routines\Http\Controllers;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Routines\Http\Presenters\RunPresenter;
@@ -25,7 +26,7 @@ final class RunsController
             return Problem::forbidden('Non hai il permesso di vedere le esecuzioni.');
         }
 
-        $perPage = min(100, max(1, (int) $request->query('per_page', '25')));
+        $perPage = $this->perPage($request, 25);
         $query = RoutineRun::query()->with('routine');
 
         foreach (['routine_id', 'outcome', 'reason', 'correlation_id'] as $field) {
@@ -68,7 +69,7 @@ final class RunsController
         if (! Permissions::allows(Permissions::READ)) {
             return Problem::forbidden('Non hai il permesso di vedere le esecuzioni.');
         }
-        $run = RoutineRun::with('routine')->find($id);
+        $run = RoutineRun::query()->with('routine')->whereKey($id)->first();
 
         return $run === null
             ? Problem::notFound('Questa esecuzione non esiste.')
@@ -87,7 +88,7 @@ final class RunsController
             ->where('outcome', 'paused')
             ->whereNull('resolved_at')
             ->orderBy('created_at')
-            ->limit(min(100, max(1, (int) $request->query('per_page', '50'))))
+            ->limit($this->perPage($request, 50))
             ->get();
 
         return new JsonResponse([
@@ -111,7 +112,7 @@ final class RunsController
         if (! Permissions::allows(Permissions::APPROVE)) {
             return Problem::forbidden('Non hai il permesso di rispondere alle richieste delle routine.');
         }
-        $run = RoutineRun::with('routine')->find($id);
+        $run = RoutineRun::query()->with('routine')->whereKey($id)->first();
         if ($run === null) {
             return Problem::notFound('Questa esecuzione non esiste.');
         }
@@ -143,12 +144,19 @@ final class RunsController
     private function currentSubject(Request $request): string
     {
         $user = $request->user();
-        if ($user === null) {
+        if (! $user instanceof Authenticatable) {
             return 'unknown';
         }
 
-        $key = method_exists($user, 'getAuthIdentifier') ? $user->getAuthIdentifier() : null;
+        $key = $user->getAuthIdentifier();
 
         return 'user:'.(is_scalar($key) ? (string) $key : 'unknown');
+    }
+
+    private function perPage(Request $request, int $default): int
+    {
+        $raw = $request->query('per_page', (string) $default);
+
+        return min(100, max(1, is_numeric($raw) ? (int) $raw : $default));
     }
 }

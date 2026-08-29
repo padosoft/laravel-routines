@@ -60,6 +60,8 @@ use Padosoft\Routines\Contracts\Routine\TriggerKind;
  * @property string $initiation
  * @property string|null $created_by
  * @property Carbon|null $last_fired_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
 class Routine extends Model
 {
@@ -107,6 +109,18 @@ class Routine extends Model
         ];
     }
 
+    /**
+     * La routine con questo id, o null.
+     *
+     * Passa dal query builder invece che da `Model::find()` perche' quest'ultimo, per un
+     * analizzatore, restituisce `mixed`: il chiamante finirebbe per invocare metodi su un tipo
+     * sconosciuto e nessuno se ne accorgerebbe fino al primo id inesistente.
+     */
+    public static function findById(string $id): ?self
+    {
+        return static::query()->whereKey($id)->first();
+    }
+
     /** @return HasMany<RoutineRun, $this> */
     public function runs(): HasMany
     {
@@ -150,9 +164,12 @@ class Routine extends Model
             return null;
         }
         $classes = [];
-        foreach ($m['action_classes'] ?? [] as $c) {
-            if (is_string($c) && $c !== '') {
-                $classes[] = $c;
+        $declared = $m['action_classes'] ?? [];
+        if (is_array($declared)) {
+            foreach ($declared as $c) {
+                if (is_string($c) && $c !== '') {
+                    $classes[] = $c;
+                }
             }
         }
         $notAfter = $m['not_after'] ?? null;
@@ -161,7 +178,7 @@ class Routine extends Model
             targetType: is_string($m['target_type'] ?? null) ? $m['target_type'] : $this->target_type,
             payloadDigest: is_string($m['payload_digest'] ?? null) ? $m['payload_digest'] : '',
             actionClasses: $classes,
-            budgetCeiling: isset($m['budget_ceiling']) ? (float) $m['budget_ceiling'] : null,
+            budgetCeiling: is_numeric($m['budget_ceiling'] ?? null) ? (float) $m['budget_ceiling'] : null,
             notAfter: is_string($notAfter) ? new \DateTimeImmutable($notAfter) : null,
             currency: is_string($m['currency'] ?? null) ? $m['currency'] : $this->currency,
         );

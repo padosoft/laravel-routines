@@ -28,7 +28,7 @@ final class RoutinesController
             return Problem::forbidden('Non hai il permesso di vedere le routine.');
         }
 
-        $perPage = min(100, max(1, (int) $request->query('per_page', '25')));
+        $perPage = $this->perPage($request);
         $query = Routine::query();
 
         foreach (['status', 'target_type', 'owner', 'organization_id'] as $field) {
@@ -78,7 +78,7 @@ final class RoutinesController
         if (! Permissions::allows(Permissions::READ)) {
             return Problem::forbidden('Non hai il permesso di vedere le routine.');
         }
-        $routine = Routine::find($id);
+        $routine = Routine::findById($id);
 
         return $routine === null
             ? Problem::notFound('Questa routine non esiste.')
@@ -105,7 +105,7 @@ final class RoutinesController
         if (! Permissions::allows(Permissions::WRITE)) {
             return Problem::forbidden('Non hai il permesso di modificare le routine.');
         }
-        $routine = Routine::find($id);
+        $routine = Routine::findById($id);
         if ($routine === null) {
             return Problem::notFound('Questa routine non esiste.');
         }
@@ -119,7 +119,7 @@ final class RoutinesController
             return Problem::validation($e->getMessage(), $e->errors);
         }
 
-        return new JsonResponse(['data' => $this->presenter->detail($routine->fresh())]);
+        return new JsonResponse(['data' => $this->presenter->detail($routine->fresh() ?? $routine)]);
     }
 
     public function pause(string $id): JsonResponse
@@ -157,7 +157,7 @@ final class RoutinesController
         if (! Permissions::allows(Permissions::FIRE)) {
             return Problem::forbidden('Non hai il permesso di lanciare le routine.');
         }
-        $routine = Routine::find($id);
+        $routine = Routine::findById($id);
         if ($routine === null) {
             return Problem::notFound('Questa routine non esiste.');
         }
@@ -165,11 +165,11 @@ final class RoutinesController
             return Problem::conflict('Questa routine è stata terminata e non può più essere eseguita.');
         }
 
-        $input = $request->input('input');
+        $key = $request->header('Idempotency-Key');
         $run = $this->manager->fireNow(
             $routine,
-            is_array($input) ? $input : [],
-            $request->header('Idempotency-Key'),
+            $this->stringKeyed($request->input('input')),
+            is_string($key) && $key !== '' ? $key : null,
         );
 
         return $run === null
@@ -182,7 +182,7 @@ final class RoutinesController
         if (! Permissions::allows(Permissions::WRITE)) {
             return Problem::forbidden('Non hai il permesso di creare routine.');
         }
-        $routine = Routine::find($id);
+        $routine = Routine::findById($id);
         if ($routine === null) {
             return Problem::notFound('Questa routine non esiste.');
         }
@@ -213,7 +213,7 @@ final class RoutinesController
         // trasferirlo significherebbe autorizzare qualcosa che nessuno ha approvato.
         $copy->pause();
 
-        return new JsonResponse(['data' => $this->presenter->detail($copy->fresh())], 201);
+        return new JsonResponse(['data' => $this->presenter->detail($copy->fresh() ?? $copy)], 201);
     }
 
     /** @param \Closure(Routine): void $action */
@@ -222,14 +222,14 @@ final class RoutinesController
         if (! Permissions::allows($ability)) {
             return Problem::forbidden('Non hai il permesso di modificare le routine.');
         }
-        $routine = Routine::find($id);
+        $routine = Routine::findById($id);
         if ($routine === null) {
             return Problem::notFound('Questa routine non esiste.');
         }
 
         $action($routine);
 
-        return new JsonResponse(['data' => $this->presenter->detail($routine->fresh())]);
+        return new JsonResponse(['data' => $this->presenter->detail($routine->fresh() ?? $routine)]);
     }
 
     /** @return array<string, mixed> */
@@ -237,7 +237,8 @@ final class RoutinesController
     {
         // Allow-list esplicita: `status`, `next_run_at` e i campi del lock non sono modificabili
         // dall'API, e i campi del mandato passano dal flusso di consenso, non da un PATCH.
-        return $request->only([
+        /** @var array<string, mixed> $only */
+        $only = $request->only([
             'owner', 'organization_id', 'name', 'description',
             'target_type', 'target_payload',
             'trigger_kind', 'cron', 'once_at', 'event_name', 'timezone',
@@ -245,5 +246,39 @@ final class RoutinesController
             'budget_per_run', 'budget_per_period', 'budget_period', 'currency',
             'timeout_seconds', 'max_attempts', 'initiation', 'created_by',
         ]);
+
+        return $only;
+    }
+
+    /** Quanti elementi per pagina, entro limiti sensati. */
+    private function perPage(Request $request): int
+    {
+        $raw = $request->query('per_page', '25');
+
+        return min(100, max(1, is_numeric($raw) ? (int) $raw : 25));
+    }
+
+    /**
+     * Un input arbitrario ridotto a mappa stringa=>valore.
+     *
+     * Le chiavi numeriche vengono scartate: l'input di un fire e' un dizionario di parametri con
+     * un nome, e una lista posizionale qui e' quasi sempre il segno di un client che sbaglia forma.
+     *
+     * @return array<string, mixed>
+     */
+    private function stringKeyed(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($value as $key => $item) {
+            if (is_string($key)) {
+                $out[$key] = $item;
+            }
+        }
+
+        return $out;
     }
 }

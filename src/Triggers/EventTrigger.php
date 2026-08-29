@@ -68,17 +68,33 @@ final class EventTrigger
     private function input(object|array $payload): array
     {
         if (is_array($payload)) {
-            return $payload;
+            return $this->stringKeyed($payload);
         }
         if (method_exists($payload, 'toRoutineInput')) {
             $custom = $payload->toRoutineInput();
 
-            return is_array($custom) ? $custom : [];
+            return is_array($custom) ? $this->stringKeyed($custom) : [];
         }
 
         $out = [];
         foreach (get_object_vars($payload) as $key => $value) {
             if (is_scalar($value) || $value === null) {
+                $out[$key] = $value;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<mixed>  $values
+     * @return array<string, mixed>
+     */
+    private function stringKeyed(array $values): array
+    {
+        $out = [];
+        foreach ($values as $key => $value) {
+            if (is_string($key)) {
                 $out[$key] = $value;
             }
         }
