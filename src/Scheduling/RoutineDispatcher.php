@@ -9,6 +9,11 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Padosoft\Routines\Contracts\Consent\MandateExceeded;
+use Padosoft\Routines\Contracts\Delegation\DelegationUnavailable;
+use Padosoft\Routines\Contracts\Delegation\RoutineDelegationBroker;
+use Padosoft\Routines\Contracts\Escalation\RoutineEscalation;
+use Padosoft\Routines\Contracts\Escalation\RoutineEscalator;
 use Padosoft\Routines\Contracts\Execution\FireReason;
 use Padosoft\Routines\Contracts\Execution\RoutineExecution;
 use Padosoft\Routines\Contracts\Routine\MissedRunPolicy;
@@ -50,6 +55,8 @@ final class RoutineDispatcher
         private readonly TargetRegistry $registry,
         private readonly RoutineScheduler $scheduler,
         private readonly Events $events,
+        private readonly RoutineDelegationBroker $delegation,
+        private readonly RoutineEscalator $escalator,
         /** Per quanto un worker tiene il lock prima che sia considerato morto. */
         private readonly int $lockSeconds = 900,
         /** Quante occorrenze perse si recuperano al massimo, per non trasformare un downtime in uno sciame. */
@@ -244,7 +251,174 @@ final class RoutineDispatcher
         return $count;
     }
 
+    /**
+     * La risposta di un umano a un fire fermo.
+     *
+     * Approvare NON rifà il fire da capo: apre un nuovo tentativo con **la stessa chiave di
+     * idempotenza**, così il bersaglio riconosce il lavoro come lo stesso e riprende da dove si era
+     * fermato invece di ripetere ciò che aveva già fatto prima di fermarsi. Rifiutare chiude il
+     * fire come `skipped` col motivo — non `failed`, perché non si è rotto niente: qualcuno ha
+     * deciso di no, e quella decisione è un esito legittimo che va letto come tale nel ledger.
+     *
+     * @param  bool  $approved  la persona ha detto sì?
+     * @param  string  $resolvedBy  chi ha risposto, in forma canonica `type:id`
+     * @param  string  $note  obbligatoria sul rifiuto: qualcuno la leggerà
+     */
+    public function resolve(RoutineRun $run, bool $approved, string $resolvedBy, string $note = ''): RoutineRun
+    {
+        if ($run->outcome !== TargetOutcome::Paused->value) {
+            // Già risolto, o mai stato in pausa. Rispondere due volte alla stessa domanda non deve
+            // produrre due esecuzioni: la seconda risposta non fa niente.
+            return $run;
+        }
+
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+
+        if (! $approved) {
+            if (trim($note) === '') {
+                throw new \InvalidArgumentException('Un rifiuto senza motivo non è leggibile da chi lo troverà nel ledger.');
+            }
+
+            $run->forceFill([
+                'outcome' => TargetOutcome::Skipped->value,
+                'message' => 'Rifiutata da un umano: '.trim($note),
+                'resolved_by' => $resolvedBy,
+                'resolved_at' => $now,
+                'resolution_note' => trim($note),
+                'finished_at' => $now,
+            ])->save();
+
+            $routine = $run->routine;
+            if ($routine instanceof Routine) {
+                $this->events->dispatch(new RoutineFinished($routine, $run->refresh(), TargetResult::skipped($run->message ?? '')));
+            }
+
+            return $run->refresh();
+        }
+
+        $run->forceFill([
+            'resolved_by' => $resolvedBy,
+            'resolved_at' => $now,
+            'resolution_note' => trim($note) !== '' ? trim($note) : null,
+        ])->save();
+
+        $routine = $run->routine;
+        if (! $routine instanceof Routine) {
+            return $run;
+        }
+
+        $resumed = $this->openRun(
+            routine: $routine,
+            occurrence: $run->scheduled_for?->toDateTimeImmutable() ?? $now,
+            reason: FireReason::Resumed,
+            idempotencyKey: $run->idempotency_key,   // stessa chiave: è lo stesso lavoro
+            attempt: $run->attempt + 1,
+        );
+        if ($resumed === null) {
+            return $run->refresh();
+        }
+
+        // Il token di ripresa e la nota tornano al bersaglio come input di QUESTO fire: è così che
+        // riprende da dove si era fermato.
+        $this->execute($routine, $resumed, $now, array_filter([
+            'resume_token' => $run->resume_token,
+            'approved_by' => $resolvedBy,
+            'approval_note' => trim($note) !== '' ? trim($note) : null,
+        ], static fn ($v): bool => $v !== null));
+
+        return $resumed->refresh();
+    }
+
     // ── Interno ──────────────────────────────────────────────────────────────
+
+    /**
+     * Manda la domanda a un umano e registra se ci è riuscita.
+     *
+     * Un fallimento di consegna NON fa fallire il fire: la domanda resta comunque nel pannello, e
+     * il canale è il modo veloce di raggiungere una persona, non l'unico. Ma va **scritto**: una
+     * routine ferma in attesa di una domanda mai consegnata è il fallimento peggiore del sistema,
+     * e deve essere visibile a chi guarda il fire, non solo in un log.
+     */
+    private function escalate(Routine $routine, RoutineRun $run, TargetResult $result): void
+    {
+        $actionClass = is_string($result->metadata['action_class'] ?? null)
+            ? $result->metadata['action_class']
+            : 'unknown';
+
+        $run->forceFill([
+            'action_class' => $actionClass,
+            'question' => $result->message,
+        ])->save();
+
+        try {
+            $this->escalator->escalate(new RoutineEscalation(
+                routine: $routine->ref(),
+                runId: $run->id,
+                question: $result->message,
+                actionClass: $actionClass,
+                owner: $routine->owner,
+                facts: $this->scalarFacts($result->metadata),
+            ));
+            $run->forceFill(['escalated_at' => new \DateTimeImmutable('now', new \DateTimeZone('UTC'))])->save();
+        } catch (\Throwable $e) {
+            $run->forceFill(['escalation_error' => mb_substr($this->humanMessage($e), 0, 250)])->save();
+        }
+    }
+
+    /**
+     * I soli valori mostrabili su un canale: niente strutture, niente payload interi.
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, scalar|null>
+     */
+    private function scalarFacts(array $metadata): array
+    {
+        $facts = [];
+        foreach ($metadata as $key => $value) {
+            if ($key !== 'action_class' && (is_scalar($value) || $value === null)) {
+                $facts[$key] = $value;
+            }
+        }
+
+        return $facts;
+    }
+
+    /**
+     * Il tetto di questo fire: il più stretto fra quello configurato e quello del mandato.
+     *
+     * Il più stretto, sempre. Un mandato che copre 500 € non diventa più largo perché la routine
+     * è configurata a 1.000: il consenso è un tetto, non un suggerimento.
+     */
+    private function budgetFor(Routine $routine): ?float
+    {
+        $configured = $routine->budget_per_run !== null ? (float) $routine->budget_per_run : null;
+        $mandate = $routine->mandateObject()?->budgetCeiling;
+
+        if ($configured === null) {
+            return $mandate;
+        }
+        if ($mandate === null) {
+            return $configured;
+        }
+
+        return min($configured, $mandate);
+    }
+
+    /** Il testo della domanda quando il bersaglio ha lanciato invece di comporlo lui. */
+    private function pauseQuestion(Routine $routine, MandateExceeded $e): string
+    {
+        $facts = [];
+        foreach ($this->scalarFacts($e->context) as $key => $value) {
+            $facts[] = $key.': '.(is_bool($value) ? ($value ? 'sì' : 'no') : (string) $value);
+        }
+
+        return sprintf(
+            '«%s» vuole compiere un\'azione di tipo "%s" che il suo mandato non copre.%s',
+            $routine->name,
+            $e->actionClass,
+            $facts === [] ? '' : ' '.implode(' · ', $facts),
+        );
+    }
 
     /**
      * Apre la riga del run. `null` se quell'occorrenza è già stata presa da qualcun altro.
@@ -295,6 +469,27 @@ final class RoutineDispatcher
             return;
         }
 
+        // L'autorita' con cui girare, PRIMA di qualsiasi lavoro: se la delega non c'e' piu', non
+        // deve essere successo niente. Chiederla dopo significherebbe scoprire di non essere
+        // autorizzati a fare una cosa che si e' gia' fatta.
+        $token = null;
+        if (is_string($routine->delegation_grant_id) && $routine->delegation_grant_id !== '') {
+            try {
+                $token = $this->delegation->tokenFor(
+                    $routine->ref(),
+                    $routine->delegation_grant_id,
+                    $routine->mandateObject(),
+                );
+            } catch (DelegationUnavailable $e) {
+                // Non ritentabile: un backoff non fa tornare un consenso ritirato.
+                $this->closeRun($run, TargetResult::failed($e->getMessage(), ['delegation_reason' => $e->reason]), retryable: false);
+                $routine->suspend('delegation_'.$e->reason);
+                $this->events->dispatch(new RoutineSuspended($routine, 'delegation_'.$e->reason, $e->getMessage()));
+
+                return;
+            }
+        }
+
         $execution = new RoutineExecution(
             routine: $routine->ref(),
             runId: $run->id,
@@ -304,12 +499,12 @@ final class RoutineDispatcher
             scheduledFor: $run->scheduled_for?->toDateTimeImmutable() ?? $now,
             timezone: $routine->timezone,
             input: $input,
-            delegatedToken: null,           // fase 2
+            delegatedToken: $token?->accessToken,
             delegationGrantId: $routine->delegation_grant_id,
             deadline: $routine->timeout_seconds !== null
                 ? $now->modify('+'.$routine->timeout_seconds.' seconds')
                 : null,
-            budgetRemaining: $routine->budget_per_run !== null ? (float) $routine->budget_per_run : null,
+            budgetRemaining: $this->budgetFor($routine),
             attempt: $run->attempt,
             correlationId: $run->correlation_id,
         );
@@ -318,6 +513,15 @@ final class RoutineDispatcher
 
         try {
             $result = $target->fire($execution);
+        } catch (MandateExceeded $e) {
+            // Un bersaglio dovrebbe restituire TargetResult::paused(), ma lanciare e' l'errore piu'
+            // naturale da commettere - e trattarlo come un fallimento qualsiasi sarebbe il difetto
+            // peggiore: la routine si arrenderebbe in silenzio invece di chiedere. Lo convertiamo.
+            $result = TargetResult::paused(
+                $this->pauseQuestion($routine, $e),
+                pendingApprovalId: null,
+                metadata: ['action_class' => $e->actionClass] + $e->context,
+            );
         } catch (\Throwable $e) {
             // Un'eccezione significa "non l'avevo considerato": è ritentabile, ma il messaggio va
             // scritto in chiaro perché qualcuno lo leggerà in un pannello, non in uno stack trace.
@@ -332,6 +536,8 @@ final class RoutineDispatcher
         $routine->forceFill(['last_fired_at' => $now])->save();
 
         if ($result->outcome === TargetOutcome::Paused) {
+            $run->refresh();
+            $this->escalate($routine, $run, $result);
             $this->events->dispatch(new RoutinePaused($routine, $run->refresh(), $result));
         } else {
             $this->events->dispatch(new RoutineFinished($routine, $run->refresh(), $result));

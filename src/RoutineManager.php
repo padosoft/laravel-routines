@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Padosoft\Routines;
 
 use Cron\CronExpression;
+use Padosoft\Routines\Contracts\Consent\RoutineMandate;
 use Padosoft\Routines\Contracts\Execution\FireReason;
 use Padosoft\Routines\Models\Routine;
 use Padosoft\Routines\Models\RoutineRun;
@@ -89,6 +90,84 @@ final class RoutineManager
     public function fireNow(Routine $routine, array $input = [], ?string $idempotencyKey = null): ?RoutineRun
     {
         return $this->dispatcher->fireNow($routine, $input, FireReason::Manual, $idempotencyKey);
+    }
+
+    /**
+     * Registra il mandato con cui la routine potrà girare da sola.
+     *
+     * Il mandato è vincolato al **digest canonico del payload approvato**, ed è il motivo per cui
+     * questo metodo lo calcola invece di accettarlo: se domani qualcuno modifica il payload, il
+     * digest non corrisponde più e `mandateCovers()` dice di no. Il consenso vale per **quella**
+     * configurazione, non per la routine in generale — è lo stesso principio del dynamic linking
+     * PSD2, dove cambiare l'importo dopo la conferma invalida la conferma.
+     *
+     * @param  list<string>  $actionClasses  vuoto = il mandato non autorizza NIENTE (fail-closed:
+     *                                       vedi RoutineMandate::covers)
+     * @param  string|null  $confirmationId  l'evidenza della conferma step-up
+     * @param  string|null  $aal  il livello di garanzia con cui è stata data
+     */
+    public function grantMandate(
+        Routine $routine,
+        array $actionClasses,
+        ?float $budgetCeiling = null,
+        ?\DateTimeImmutable $notAfter = null,
+        ?string $delegationGrantId = null,
+        ?string $confirmationId = null,
+        ?string $aal = null,
+    ): RoutineMandate {
+        $mandate = new RoutineMandate(
+            targetType: $routine->target_type,
+            payloadDigest: $routine->payloadDigest(),
+            actionClasses: $actionClasses,
+            budgetCeiling: $budgetCeiling,
+            notAfter: $notAfter,
+            currency: $routine->currency,
+        );
+
+        $routine->forceFill([
+            'mandate' => [
+                'target_type' => $mandate->targetType,
+                'payload_digest' => $mandate->payloadDigest,
+                'action_classes' => $mandate->actionClasses,
+                'budget_ceiling' => $mandate->budgetCeiling,
+                'currency' => $mandate->currency,
+                'not_after' => $mandate->notAfter?->format(\DateTimeInterface::ATOM),
+            ],
+            'mandate_digest' => $mandate->digest(),
+            'mandate_granted_at' => new \DateTimeImmutable('now', new \DateTimeZone('UTC')),
+            'delegation_grant_id' => $delegationGrantId ?? $routine->delegation_grant_id,
+            'consent_confirmation_id' => $confirmationId,
+            'consent_aal' => $aal,
+        ])->save();
+
+        return $mandate;
+    }
+
+    /**
+     * Il mandato copre ancora la configurazione attuale?
+     *
+     * `false` quando il payload è cambiato dopo il consenso. Non è un errore da lanciare: è uno
+     * stato da **mostrare**, con l'azione per rimediare («richiedi un nuovo consenso»). Lanciare
+     * qui trasformerebbe una modifica legittima in un guasto.
+     */
+    public function mandateCovers(Routine $routine): bool
+    {
+        $mandate = $routine->mandateObject();
+        if ($mandate === null) {
+            return true;   // nessun mandato = nessun vincolo da violare
+        }
+
+        return $mandate->payloadDigest === $routine->payloadDigest()
+            && $mandate->targetType === $routine->target_type
+            && ($mandate->notAfter === null || $mandate->notAfter > new \DateTimeImmutable);
+    }
+
+    /**
+     * La risposta di un umano a un fire fermo. Delega al dispatcher, che sa riprenderlo.
+     */
+    public function resolve(RoutineRun $run, bool $approved, string $resolvedBy, string $note = ''): RoutineRun
+    {
+        return $this->dispatcher->resolve($run, $approved, $resolvedBy, $note);
     }
 
     public function pause(Routine $routine): void

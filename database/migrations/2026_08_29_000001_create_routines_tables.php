@@ -68,6 +68,13 @@ return new class extends Migration
             $t->string('mandate_digest', 64)->nullable();
             $t->json('mandate')->nullable();
 
+            // L'evidenza del consenso, non la sua decorazione: quale conferma step-up, a che
+            // livello di garanzia, quando. Senza queste tre cose "l'utente aveva acconsentito"
+            // e' un'affermazione, non un fatto verificabile.
+            $t->timestamp('mandate_granted_at')->nullable();
+            $t->string('consent_confirmation_id', 64)->nullable();
+            $t->string('consent_aal', 8)->nullable();
+
             // Tetti.
             $t->decimal('budget_per_run', 12, 4)->nullable();
             $t->decimal('budget_per_period', 12, 4)->nullable();
@@ -114,6 +121,17 @@ return new class extends Migration
             // Pausa in attesa di un umano.
             $t->string('pending_approval_id', 64)->nullable()->index();
             $t->text('resume_token')->nullable();
+
+            // La risposta: chi, quando, e con che parole. Il motivo di un rifiuto e' obbligatorio
+            // perche' qualcuno lo leggera' - tipicamente chi si chiede perche' quella cosa non
+            // e' stata fatta.
+            $t->string('action_class', 64)->nullable();
+            $t->text('question')->nullable();
+            $t->string('resolved_by', 128)->nullable();
+            $t->timestamp('resolved_at')->nullable();
+            $t->text('resolution_note')->nullable();
+            $t->timestamp('escalated_at')->nullable();
+            $t->string('escalation_error')->nullable();
 
             // Quando ritentare. Un backoff ha bisogno di un ISTANTE, non di un contatore: il tick
             // seguente raccoglie i falliti la cui ora e' arrivata, e il ritardo sopravvive a un

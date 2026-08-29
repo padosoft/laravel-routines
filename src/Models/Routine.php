@@ -47,6 +47,9 @@ use Padosoft\Routines\Contracts\Routine\TriggerKind;
  * @property string|null $delegation_grant_id
  * @property string|null $mandate_digest
  * @property array<string, mixed>|null $mandate
+ * @property Carbon|null $mandate_granted_at
+ * @property string|null $consent_confirmation_id
+ * @property string|null $consent_aal
  * @property float|null $budget_per_run
  * @property float|null $budget_per_period
  * @property string|null $budget_period
@@ -95,6 +98,7 @@ class Routine extends Model
             'next_run_at' => 'datetime',
             'locked_until' => 'datetime',
             'last_fired_at' => 'datetime',
+            'mandate_granted_at' => 'datetime',
             'budget_per_run' => 'float',
             'budget_per_period' => 'float',
             'max_attempts' => 'integer',

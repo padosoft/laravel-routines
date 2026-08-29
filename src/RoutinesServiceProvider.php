@@ -9,6 +9,10 @@ use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Events\Dispatcher as Events;
 use Padosoft\Routines\Console\ListCommand;
 use Padosoft\Routines\Console\TickCommand;
+use Padosoft\Routines\Contracts\Delegation\RoutineDelegationBroker;
+use Padosoft\Routines\Contracts\Escalation\RoutineEscalator;
+use Padosoft\Routines\Delegation\NullDelegationBroker;
+use Padosoft\Routines\Escalation\LoggingEscalator;
 use Padosoft\Routines\Scheduling\RoutineDispatcher;
 use Padosoft\Routines\Scheduling\RoutineScheduler;
 use Padosoft\Routines\Targets\JobTarget;
@@ -35,10 +39,19 @@ final class RoutinesServiceProvider extends PackageServiceProvider
         $this->app->singleton(TargetRegistry::class);
         $this->app->singleton(RoutineScheduler::class);
 
+        // Entrambi hanno un default che NON simula la funzione mancante: il broker nullo lancia
+        // invece di emettere un token dell'applicazione, e l'escalator di default scrive un
+        // warning invece di ingoiare la domanda. Un default comodo, qui, regalerebbe autorita' o
+        // nasconderebbe una routine ferma che nessuno sta aspettando di sbloccare.
+        $this->app->bindIf(RoutineDelegationBroker::class, NullDelegationBroker::class);
+        $this->app->bindIf(RoutineEscalator::class, fn ($app) => new LoggingEscalator($app->make('log')));
+
         $this->app->singleton(RoutineDispatcher::class, fn ($app) => new RoutineDispatcher(
             registry: $app->make(TargetRegistry::class),
             scheduler: $app->make(RoutineScheduler::class),
             events: $app->make(Events::class),
+            delegation: $app->make(RoutineDelegationBroker::class),
+            escalator: $app->make(RoutineEscalator::class),
             lockSeconds: (int) config('routines.lock_seconds', 900),
             catchUpCap: (int) config('routines.catch_up_cap', 25),
             retryBaseSeconds: (int) config('routines.retry_base_seconds', 60),

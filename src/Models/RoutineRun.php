@@ -36,6 +36,14 @@ use Padosoft\Routines\Contracts\Target\TargetOutcome;
  * @property string|null $pending_approval_id
  * @property string|null $resume_token
  * @property string|null $correlation_id
+ * @property string|null $action_class
+ * @property string|null $question
+ * @property string|null $resolved_by
+ * @property Carbon|null $resolved_at
+ * @property string|null $resolution_note
+ * @property Carbon|null $escalated_at
+ * @property string|null $escalation_error
+ * @property Carbon|null $retry_at
  */
 class RoutineRun extends Model
 {
@@ -57,6 +65,9 @@ class RoutineRun extends Model
             'scheduled_for' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
+            'resolved_at' => 'datetime',
+            'escalated_at' => 'datetime',
+            'retry_at' => 'datetime',
             'cost' => 'float',
             'attempt' => 'integer',
         ];
