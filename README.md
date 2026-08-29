@@ -160,6 +160,88 @@ primo fire delle 3:00 è un fallimento silenzioso dentro un log che nessuno legg
 
 ---
 
+## Gli altri modi di far partire una routine
+
+Il cron è il più comune, non l'unico. Ognuno degli altri porta con sé una domanda che va decisa
+una volta e bene: **quando due arrivi sono lo stesso fatto, e quando sono due fatti.**
+
+### Su un evento dell'applicazione
+
+```php
+// Dal tuo EventServiceProvider
+Event::listen(OrderPlaced::class, function (OrderPlaced $event): void {
+    app(EventTrigger::class)->handle('order.placed', $event);
+});
+```
+
+Ogni emissione riceve una chiave nuova, di default. **Deduplicare due `OrderPlaced` sarebbe peggio
+che eseguirli due volte**: significherebbe non spedire un ordine. Se il tuo evento *può* arrivare
+due volte per lo stesso fatto — una consegna at-least-once da una coda — esponi
+`idempotencyKey(): string` sull'evento e la deduplicazione avviene. È il mittente a saperlo: qui
+non c'è modo di indovinarlo.
+
+Dall'oggetto evento passa **solo ciò che è scalare**. L'input finisce nel ledger, e un model intero
+ci porterebbe relazioni e talvolta dati che non devono uscire. Serve di più? Esponi
+`toRoutineInput(): array` e decidi tu cosa esce.
+
+### Da un webhook firmato
+
+```php
+$secret = app(RoutineManager::class)->rotateWebhookSecret($routine);
+// Restituito in chiaro UNA VOLTA: da qui in poi esiste solo cifrato in colonna.
+```
+
+Il mittente firma con HMAC-SHA256 e chiama `POST /hooks/routines/{id}`:
+
+```
+X-Routines-Timestamp: 1788000000
+X-Routines-Signature: <hmac_sha256("{timestamp}.{corpo grezzo}", secret)>
+X-Routines-Delivery:  <id di consegna>       ← diventa la chiave di idempotenza
+```
+
+La rotta sta **fuori dal guard di sessione**: la chiama una macchina, che non ha cookie né CSRF e
+non deve averne. La firma è l'unica autenticazione, quindi ogni dettaglio della verifica è una
+difesa il cui fallimento sarebbe silenzioso:
+
+| Scelta | Cosa impedisce |
+|---|---|
+| Si firma il corpo **grezzo**, non il JSON riserializzato | Un `+` normalizzato farebbe fallire ogni consegna legittima — o passarne una che non doveva |
+| `hash_equals`, mai `===` | Un confronto che esce al primo byte diverso racconta, nei tempi, quanti byte erano giusti |
+| Finestra di 5 minuti sul timestamp **firmato** | Una consegna intercettata resterebbe valida per sempre, rigiocabile fra un anno |
+| L'id di consegna è la chiave | Le consegne webhook sono at-least-once **per costruzione**: il mittente garantisce "almeno una", mai "esattamente una" |
+| Routine inesistente e routine senza segreto → **stessa risposta** | Distinguerle direbbe a chi prova gli id quali esistono |
+
+Una routine in pausa risponde invece `409`, non `403`: la firma era giusta, e chi chiama deve poter
+distinguere «non sei autorizzato» da «è ferma».
+
+Il segreto è **cifrato** a riposo, non hashato — per verificare un HMAC serve il segreto vero al
+momento del confronto, quindi il massimo ottenibile è che un dump del database non lo consegni.
+
+---
+
+## Tetti di spesa
+
+Gli scope limitano **cosa** una routine può fare; il tetto limita **quanto**. È la seconda difesa,
+ed è quella che manca ovunque: una routine perfettamente autorizzata a "mandare email", chiamata
+mille volte da un ciclo impazzito, non ha violato nessun permesso — ha solo mandato mille email.
+
+```php
+'budget_per_run'    => 0.50,
+'budget_per_period' => 20.00,
+'budget_period'     => 'month',   // day | week | month
+```
+
+Il tetto si controlla **prima e dopo** ogni fire: solo a monte non basta (il primo sforamento
+arriva da un fire che a monte era ancora dentro), solo a valle scopre lo sforamento quando i soldi
+sono già spesi. A tetto esaurito la routine si **sospende**, non salta: saltare vorrebbe dire
+ritrovare lo stesso tetto superato ogni ora per tutto il resto del mese.
+
+Il periodo si calcola **nel fuso del proprietario** — "questo mese" per chi vive a Roma comincia
+due ore prima che a Greenwich — e il messaggio dice **quando riparte**, perché senza, l'unica
+azione che resta a chi legge è alzare il tetto, che spesso non è la cosa giusta da fare.
+
+---
+
 ## Le decisioni che contano
 
 Un pacchetto di scheduling si giudica su cinque casi limite. Sono tutti pinnati da test.
@@ -229,11 +311,12 @@ sei righe centrali non le ha nessun altro**, e non per svista: richiedono un IAM
 canali (`laravel-rebel-channels`) e un ledger FinOps (`laravel-ai-finops`) — cioè un ecosistema, non
 una feature.
 
-> ⚠️ **Onestà sullo stato.** Fase 1 (schedulazione, esecuzione, bersagli, ledger) è **rilasciata**.
-> Identità delegata, mandato ed escalation sono in **fase 2**, con i contratti già congelati in
-> `padosoft/laravel-routines-contracts` (`RoutineMandate`, `TargetOutcome::Paused`) e le colonne già
-> nello schema. Le righe della tabella che dipendono dalla fase 2 sono progettate e contrattualizzate,
-> non ancora spedite: questa nota sparirà con la 2.0.
+> **Onestà sullo stato.** Tutto quanto sopra è implementato e coperto da test, con una precisazione:
+> l'**identità delegata** e l'**escalation multicanale** sono *seam* — il pacchetto definisce i
+> contratti (`RoutineDelegationBroker`, `RoutineEscalator`), li chiama nei punti giusti e ha i
+> default che falliscono in modo sicuro; le implementazioni concrete arrivano da
+> `laravel-iam-agents` e `laravel-rebel-channels`. Senza quei pacchetti la routine gira come
+> l'applicazione e la domanda finisce nel log a livello `warning` invece che su Telegram.
 
 ---
 
