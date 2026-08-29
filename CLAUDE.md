@@ -89,3 +89,27 @@ vendor/bin/phpstan analyse
 
 Se hai toccato una guardia (ora legale, lock, unique, budget, mandato): **togli la guardia e
 verifica che il test fallisca**. Un test che passa in entrambi i casi non protegge niente.
+
+## Eseguire l'analisi statica in questa sessione
+
+Il proxy di rete non lascia scaricare `phpstan/phpstan` (è dist-only e la sua zipball torna 403),
+quindi `composer require larastan` fallisce e **`vendor/bin/phpstan` non esiste**. È il motivo per
+cui il gate della CI può restare rosso mentre in locale «i test passano»: i test non sono l'analisi.
+
+Il binario però è già installato in un altro repo dell'ecosistema. Da usare così:
+
+```bash
+php /home/user/laravel-iam-contracts/vendor/phpstan/phpstan/phpstan.phar \
+    analyse -c phpstan.neon.dist --no-progress --memory-limit=1G
+```
+
+Serve che `vendor/larastan` esista in questo pacchetto — un symlink a quello dell'altro repo basta —
+e che **le versioni di Laravel/testbench combacino**, altrimenti il bootstrap di larastan avvia
+testbench e muore su un service provider che nel framework installato non c'è:
+
+```bash
+ln -sfn /home/user/laravel-iam-contracts/vendor/larastan vendor/larastan
+```
+
+**Prima di dire «verde», esegui tutti e tre**: `pint --test`, `pest`, e questo. Il terzo è quello
+che manca più facilmente, ed è quello che la CI esegue davvero.

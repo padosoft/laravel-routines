@@ -20,24 +20,28 @@ final class RunPresenter
     /** @return array<string, mixed> */
     public function summary(RoutineRun $run): array
     {
-        // Accesso diretto e senza fallback: la foreign key con cascade garantisce che un run
-        // abbia sempre la sua routine, e l'analizzatore lo sa. Un `?->` con default qui non
-        // difenderebbe da niente - segnalerebbe solo un dubbio che lo schema non lascia.
+        // La foreign key con cascade rende impossibile un run senza la sua routine, ma il tipo
+        // della relazione resta nullable e il codice lo rispetta invece di scommetterci. I default
+        // qui sotto non scatteranno mai in un database sano; se scattassero vorrebbe dire che
+        // qualcosa ha scavalcato il vincolo, e una riga leggibile nel ledger e' meglio di un
+        // errore fatale mentre qualcuno cerca di capire perche' una routine non e' partita.
+        $routine = $run->routine;
+
         return [
             'id' => $run->id,
             'routine_id' => $run->routine_id,
-            'routine_name' => $run->routine->name,
+            'routine_name' => $routine->name ?? '—',
             'reason' => $run->reason,
             'outcome' => $run->outcome,
             'attempt' => $run->attempt,
-            'max_attempts' => $run->routine->max_attempts,
+            'max_attempts' => $routine->max_attempts ?? 1,
             'scheduled_for' => $run->scheduled_for?->toIso8601String(),
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),
             'duration_ms' => $run->durationMs(),
             'message' => $run->message,
             'cost' => $run->cost,
-            'currency' => $run->routine->currency,
+            'currency' => $routine->currency ?? 'EUR',
             'retry_at' => $run->retry_at?->toIso8601String(),
         ];
     }
@@ -59,7 +63,7 @@ final class RunPresenter
             'resolved_by' => $run->resolved_by,
             'resolved_at' => $run->resolved_at?->toIso8601String(),
             'resolution_note' => $run->resolution_note,
-            'owner_label' => $run->routine->owner,
+            'owner_label' => $run->routine?->owner,
             'can_approve' => $run->isAwaitingHuman() && Permissions::allows(Permissions::APPROVE),
         ]);
     }
@@ -78,7 +82,7 @@ final class RunPresenter
             return null;
         }
 
-        $url = $resolver($run->routine->target_type, $run->external_ref);
+        $url = $resolver($run->routine->target_type ?? '', $run->external_ref);
 
         return is_string($url) && $url !== '' ? $url : null;
     }
