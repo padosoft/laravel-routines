@@ -81,7 +81,12 @@ final class StatsController
         foreach ($rows as $run) {
             $day = $run->created_at?->format('Y-m-d');
             $outcome = $run->outcome;
-            if ($day === null || $outcome === null || ! isset($series[$day][$outcome])) {
+            // I quattro esiti sono elencati: un valore fuori da questi verrebbe da una colonna
+            // corrotta, e sommarlo a una chiave inventata gonfierebbe il grafico in silenzio.
+            if ($day === null || ! in_array($outcome, ['succeeded', 'failed', 'skipped', 'paused'], true)) {
+                continue;
+            }
+            if (! isset($series[$day])) {
                 continue;
             }
             $series[$day][$outcome]++;
