@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Padosoft\Routines;
 
 use Cron\CronExpression;
+use Illuminate\Contracts\Events\Dispatcher as Events;
 use Illuminate\Support\Facades\Crypt;
 use Padosoft\Routines\Contracts\Consent\RoutineMandate;
 use Padosoft\Routines\Contracts\Execution\FireReason;
+use Padosoft\Routines\Events\RoutineMandateGranted;
 use Padosoft\Routines\Models\Routine;
 use Padosoft\Routines\Models\RoutineRun;
 use Padosoft\Routines\Scheduling\RoutineDispatcher;
@@ -28,6 +30,7 @@ final class RoutineManager
         private readonly TargetRegistry $registry,
         private readonly RoutineScheduler $scheduler,
         private readonly RoutineDispatcher $dispatcher,
+        private readonly Events $events,
     ) {}
 
     /**
@@ -140,6 +143,11 @@ final class RoutineManager
             'consent_confirmation_id' => $confirmationId,
             'consent_aal' => $aal,
         ])->save();
+
+        // La decisione di sorveglianza piu' importante del sistema — che cosa questa routine puo'
+        // fare da sola quando non c'e' nessuno — finora non lasciava traccia da nessuna parte se
+        // non nella riga della routine.
+        $this->events->dispatch(new RoutineMandateGranted($routine, $mandate, $confirmationId, $aal));
 
         return $mandate;
     }

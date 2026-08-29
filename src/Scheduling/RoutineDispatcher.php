@@ -26,6 +26,7 @@ use Padosoft\Routines\Contracts\Target\TargetResult;
 use Padosoft\Routines\Events\RoutineFinished;
 use Padosoft\Routines\Events\RoutineFired;
 use Padosoft\Routines\Events\RoutinePaused;
+use Padosoft\Routines\Events\RoutineResolved;
 use Padosoft\Routines\Events\RoutineSuspended;
 use Padosoft\Routines\Models\Routine;
 use Padosoft\Routines\Models\RoutineRun;
@@ -281,11 +282,19 @@ final class RoutineDispatcher
 
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
 
-        if (! $approved) {
-            if (trim($note) === '') {
-                throw new \InvalidArgumentException('Un rifiuto senza motivo non è leggibile da chi lo troverà nel ledger.');
-            }
+        if (! $approved && trim($note) === '') {
+            throw new \InvalidArgumentException('Un rifiuto senza motivo non è leggibile da chi lo troverà nel ledger.');
+        }
 
+        // La decisione umana e' un fatto a se': emessa PRIMA della ripresa, perche' chi la
+        // registra (audit, sorveglianza art. 14) non deve aspettare l'esito del lavoro ne'
+        // dedurla da un evento che parla d'altro.
+        $decided = $run->routine;
+        if ($decided instanceof Routine) {
+            $this->events->dispatch(new RoutineResolved($decided, $run, $approved, $resolvedBy, trim($note)));
+        }
+
+        if (! $approved) {
             $run->forceFill([
                 'outcome' => TargetOutcome::Skipped->value,
                 'message' => 'Rifiutata da un umano: '.trim($note),

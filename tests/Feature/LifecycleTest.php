@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Event;
 use Padosoft\Routines\Contracts\Lifecycle\RoutineLifecycle;
+use Padosoft\Routines\Events\RoutineMandateGranted;
 use Padosoft\Routines\Events\RoutineSuspended;
 use Padosoft\Routines\Models\Routine;
 use Padosoft\Routines\RoutineManager;
@@ -74,4 +75,29 @@ it('non riapre ne tocca una routine terminata', function (): void {
     app(RoutineLifecycle::class)->suspend($routine->id, 'routine_fire_burst', 'rebel-ai-guard');
 
     expect($routine->refresh()->status)->toBe('ended');
+});
+
+it('emette RoutineMandateGranted con l evidenza del consenso', function (): void {
+    $routine = lifecycleRoutine();
+
+    Event::fake([RoutineMandateGranted::class]);
+    // Il manager e' un singleton gia' risolto: senza questo continuerebbe a usare il dispatcher
+    // vero, e il fake non vedrebbe niente.
+    app()->forgetInstance(RoutineManager::class);
+
+    app(RoutineManager::class)->grantMandate(
+        $routine,
+        ['invoice.remind'],
+        budgetCeiling: 50.0,
+        confirmationId: 'chal_01ABC',
+        aal: 'aal2',
+    );
+
+    Event::assertDispatched(
+        RoutineMandateGranted::class,
+        fn (RoutineMandateGranted $e): bool => $e->routine->id === $routine->id
+            && $e->mandate->actionClasses === ['invoice.remind']
+            && $e->confirmationId === 'chal_01ABC'
+            && $e->aal === 'aal2',
+    );
 });

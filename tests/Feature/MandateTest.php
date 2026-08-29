@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Event;
 use Padosoft\Routines\Contracts\Consent\MandateExceeded;
 use Padosoft\Routines\Contracts\Consent\RoutineMandate;
 use Padosoft\Routines\Contracts\Delegation\DelegatedToken;
@@ -11,6 +12,7 @@ use Padosoft\Routines\Contracts\Escalation\RoutineEscalation;
 use Padosoft\Routines\Contracts\Escalation\RoutineEscalator;
 use Padosoft\Routines\Contracts\Routine\RoutineRef;
 use Padosoft\Routines\Contracts\Target\TargetResult;
+use Padosoft\Routines\Events\RoutineResolved;
 use Padosoft\Routines\Models\Routine;
 use Padosoft\Routines\Models\RoutineRun;
 use Padosoft\Routines\RoutineManager;
@@ -315,4 +317,50 @@ it('un mandato senza classi di azione non autorizza niente', function (): void {
 
     expect($mandate->covers('order.create'))->toBeFalse()
         ->and($mandate->covers('qualsiasi.cosa'))->toBeFalse();
+});
+
+it('la decisione umana e un evento a se, emesso prima che il lavoro riprenda', function (): void {
+    // Chi registra la sorveglianza (art. 14 AI Act, audit, notifiche) vuole «Anna, alle 9:14, ha
+    // approvato» — non deve aspettare l'esito del lavoro ne' dedurlo da RoutineFinished, che
+    // parla d'altro e sul ramo approvato arriva molto dopo, a volte fallendo.
+    app()->instance(RoutineEscalator::class, new SpyEscalator);
+    app()->forgetInstance(RoutineDispatcher::class);
+    app(TargetRegistry::class)->register(new RecordingTarget('test', fn () => TargetResult::paused(
+        'Chiudere la fattura INV-003?', metadata: ['action_class' => 'invoice.write_off'],
+    )));
+
+    app(RoutineDispatcher::class)->dispatch(mandated());
+    $paused = RoutineRun::first();
+
+    Event::fake([RoutineResolved::class]);
+    app()->forgetInstance(RoutineDispatcher::class);
+
+    app(RoutineDispatcher::class)->resolve($paused, approved: false, resolvedBy: 'user:anna', note: 'Il cliente ha pagato ieri');
+
+    Event::assertDispatched(
+        RoutineResolved::class,
+        fn (RoutineResolved $e): bool => $e->run->id === $paused->id
+            && $e->approved === false
+            && $e->resolvedBy === 'user:anna'
+            && $e->note === 'Il cliente ha pagato ieri',
+    );
+});
+
+it('rispondere due volte non emette due decisioni', function (): void {
+    // La seconda risposta non e' uno sbaglio del chiamante e non deve produrre niente: ne' una
+    // seconda esecuzione, ne' una seconda riga nel registro di sorveglianza.
+    app()->instance(RoutineEscalator::class, new SpyEscalator);
+    app()->forgetInstance(RoutineDispatcher::class);
+    app(TargetRegistry::class)->register(new RecordingTarget('test', fn () => TargetResult::paused('Posso?', metadata: ['action_class' => 'x'])));
+
+    app(RoutineDispatcher::class)->dispatch(mandated());
+    $paused = RoutineRun::first();
+
+    Event::fake([RoutineResolved::class]);
+    app()->forgetInstance(RoutineDispatcher::class);
+
+    app(RoutineDispatcher::class)->resolve($paused, false, 'user:anna', 'no');
+    app(RoutineDispatcher::class)->resolve($paused->fresh(), false, 'user:anna', 'no');
+
+    Event::assertDispatchedTimes(RoutineResolved::class, 1);
 });
