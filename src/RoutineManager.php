@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Padosoft\Routines;
 
 use Cron\CronExpression;
+use Illuminate\Support\Facades\Crypt;
 use Padosoft\Routines\Contracts\Consent\RoutineMandate;
 use Padosoft\Routines\Contracts\Execution\FireReason;
 use Padosoft\Routines\Models\Routine;
@@ -160,6 +161,33 @@ final class RoutineManager
         return $mandate->payloadDigest === $routine->payloadDigest()
             && $mandate->targetType === $routine->target_type
             && ($mandate->notAfter === null || $mandate->notAfter > new \DateTimeImmutable);
+    }
+
+    /**
+     * Genera (o rigenera) il segreto con cui questa routine firma i propri webhook.
+     *
+     * Restituisce il segreto **in chiaro una sola volta**: da quel momento esiste solo cifrato in
+     * colonna. Non è un hash — per verificare un HMAC serve il segreto vero al confronto — quindi
+     * il massimo ottenibile è che un dump del database non lo consegni, e che chi lo perde debba
+     * rigenerarlo invece di andarselo a rileggere.
+     */
+    public function rotateWebhookSecret(Routine $routine): string
+    {
+        $secret = bin2hex(random_bytes(32));
+        $routine->forceFill(['webhook_secret' => Crypt::encryptString($secret)])->save();
+
+        return $secret;
+    }
+
+    /**
+     * La firma che un mittente deve produrre. Utile a chi integra, e ai test.
+     *
+     * Firma `timestamp.corpo grezzo`: il timestamp dentro la firma è ciò che impedisce di
+     * riutilizzare una consegna intercettata cambiando solo l'ora.
+     */
+    public static function webhookSignature(string $secret, int $timestamp, string $rawBody): string
+    {
+        return hash_hmac('sha256', $timestamp.'.'.$rawBody, $secret);
     }
 
     /**

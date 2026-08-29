@@ -37,7 +37,12 @@ return new class extends Migration
             $t->string('trigger_kind', 16)->default('cron');
             $t->string('cron')->nullable();
             $t->timestamp('once_at')->nullable();
-            $t->string('event_name')->nullable();
+            $t->string('event_name')->nullable()->index();
+
+            // Il segreto con cui si firma il webhook, cifrato a riposo. Non e' un hash: per
+            // verificare un HMAC serve il segreto in chiaro al momento del confronto, quindi il
+            // massimo ottenibile e' che un dump del database non lo consegni.
+            $t->text('webhook_secret')->nullable();
 
             // Il fuso del PROPRIETARIO, non UTC: "ogni giorno alle 6" sono le sue 6.
             $t->string('timezone', 64)->default('UTC');

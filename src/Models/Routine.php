@@ -34,6 +34,7 @@ use Padosoft\Routines\Contracts\Routine\TriggerKind;
  * @property string|null $cron
  * @property Carbon|null $once_at
  * @property string|null $event_name
+ * @property string|null $webhook_secret
  * @property string $timezone
  * @property string $status
  * @property string|null $ended_reason

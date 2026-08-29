@@ -65,6 +65,23 @@ return [
 
     /*
     |---------------------------------------------------------------------------
+    | Ingresso webhook
+    |---------------------------------------------------------------------------
+    | Rotta separata e SENZA sessione: la chiama una macchina, che non ha cookie
+    | ne' CSRF e non deve averne. Al posto della sessione c'e' una firma
+    | HMAC-SHA256 sul corpo grezzo, con un segreto per routine.
+    |
+    | Il throttle non e' decorativo: e' l'unica difesa contro chi prova firme a
+    | ripetizione, dato che la rotta e' per definizione esposta.
+    */
+    'webhooks' => [
+        'enabled' => env('ROUTINES_WEBHOOKS_ENABLED', true),
+        'prefix' => env('ROUTINES_WEBHOOKS_PREFIX', 'hooks/routines'),
+        'middleware' => ['throttle:60,1'],
+    ],
+
+    /*
+    |---------------------------------------------------------------------------
     | Bersagli
     |---------------------------------------------------------------------------
     */

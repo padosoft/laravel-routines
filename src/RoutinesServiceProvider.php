@@ -15,10 +15,12 @@ use Padosoft\Routines\Contracts\Delegation\RoutineDelegationBroker;
 use Padosoft\Routines\Contracts\Escalation\RoutineEscalator;
 use Padosoft\Routines\Delegation\NullDelegationBroker;
 use Padosoft\Routines\Escalation\LoggingEscalator;
+use Padosoft\Routines\Http\Controllers\WebhookController;
 use Padosoft\Routines\Scheduling\RoutineDispatcher;
 use Padosoft\Routines\Scheduling\RoutineScheduler;
 use Padosoft\Routines\Targets\JobTarget;
 use Padosoft\Routines\Targets\TargetRegistry;
+use Padosoft\Routines\Triggers\EventTrigger;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -62,6 +64,7 @@ final class RoutinesServiceProvider extends PackageServiceProvider
         ));
 
         $this->app->singleton(RoutineManager::class);
+        $this->app->singleton(EventTrigger::class);
     }
 
     public function packageBooted(): void
@@ -77,6 +80,13 @@ final class RoutinesServiceProvider extends PackageServiceProvider
             Route::prefix((string) config('routines.api.prefix', 'api/routines/v1'))
                 ->middleware((array) config('routines.api.middleware', ['web', 'auth']))
                 ->group(__DIR__.'/Http/routes.php');
+        }
+
+        if (config('routines.webhooks.enabled', true)) {
+            Route::prefix((string) config('routines.webhooks.prefix', 'hooks/routines'))
+                ->middleware((array) config('routines.webhooks.middleware', ['throttle:60,1']))
+                ->post('/{id}', WebhookController::class)
+                ->name('routines.webhook');
         }
 
         if ($this->app->runningInConsole() && config('routines.tick.schedule', true)) {
