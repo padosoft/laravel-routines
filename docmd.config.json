@@ -27,6 +27,7 @@
     { "text": "Targets", "url": "/targets" },
     { "text": "Mandate", "url": "/mandate" },
     { "text": "Guarantees", "url": "/guarantees" },
+    { "text": "Oversight", "url": "/oversight" },
     { "text": "Admin API", "url": "/admin-api" }
   ],
   "plugins": {

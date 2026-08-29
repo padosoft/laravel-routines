@@ -78,6 +78,17 @@ niente.
    che il core converte).
 6. Registra dal **tuo** service provider, fuori da un eventuale guard `runningInConsole`: l'admin
    API che elenca i bersagli gira su HTTP.
+7. **Verifica il contratto con il kit spedito**, invece di rileggere questa lista:
+
+   ```php
+   use Padosoft\Routines\Testing\TargetContract;
+
+   TargetContract::assertAll($target, validPayload: [...], invalidPayload: [...], outOfMandateInput: [...]);
+   ```
+
+   Copre i punti 3, 4, 5 e l'idempotenza attraverso i retry. Se aggiungi un'asserzione al kit,
+   aggiungi anche il test che la vede **fallire** sul bersaglio che la viola: un kit che passa su
+   qualsiasi cosa non prova niente, ed è la stessa regola della sezione qui sotto.
 
 ## Prima di committare
 

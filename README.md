@@ -303,13 +303,28 @@ deve succedere quando l'automazione incontra qualcosa che il mandato non copre.
 | **Tetto di spesa** per fire e per periodo | ✅ | ❌ | ❌ | ⚠️ *(quota task)* | ⚠️ | ❌ | ❌ |
 | Audit **tamper-evident** hash-chained | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Registro **art. 14 EU AI Act** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Domande senza risposta** rilevate come anomalia | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Contratto del bersaglio **spedito come test** | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ *(SDK test env)* | ❌ |
 | **Self-hosted / sovrano**, nessun per-task pricing | ✅ | ✅ | ✅ | ⚠️ | ❌ | ✅ | ❌ |
 
 Le prime cinque righe sono igiene di scheduling: chi le sbaglia perde o duplica esecuzioni. **Le
-sei righe centrali non le ha nessun altro**, e non per svista: richiedono un IAM con delega
+righe centrali non le ha nessun altro**, e non per svista: richiedono un IAM con delega
 (`laravel-iam-agents`), uno step-up con dynamic linking (`laravel-rebel-step-up`), un livello di
 canali (`laravel-rebel-channels`) e un ledger FinOps (`laravel-ai-finops`) — cioè un ecosistema, non
 una feature.
+
+Due meritano una riga a parte, perché descrivono guasti che gli altri sistemi **non possono
+nemmeno vedere**:
+
+- **Domande senza risposta.** Una routine che si è fermata a chiedere e che nessuno ha risposto è il
+  guasto peggiore del sistema, ed è invisibile per costruzione: la routine sta facendo esattamente
+  ciò che deve — non agisce senza permesso — quindi non produce nessun errore, in nessun log, per
+  nessun monitoraggio. `laravel-rebel-ai-guard` la rileva come `routine_approval_starvation`, con la
+  domanda più vecchia in chiaro nel caso, e può sospendere la routine perché smetta di accumularne
+  altre.
+- **Il contratto del bersaglio spedito come test.** Il bersaglio lo scrive chi installa, e nessuna
+  garanzia del motore lo copre. `Testing\TargetContract` rende eseguibili le quattro regole che lo
+  rendono sicuro (vedi [Test](#test)).
 
 > **Onestà sullo stato.** Tutto quanto sopra è implementato e coperto da test, con una precisazione:
 > l'**identità delegata** e l'**escalation multicanale** sono *seam* — il pacchetto definisce i
