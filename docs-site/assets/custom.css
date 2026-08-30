@@ -1,7 +1,7 @@
 /*
  * laravel-routines brand overrides for docmd.
- * Stessa famiglia teal dell'ecosistema IAM (primary #0d9488), cosi' i doc site
- * dei pacchetti si leggono come un'unica documentazione e non come otto siti.
+ * Same teal family as the IAM ecosystem (primary #0d9488), so the packages' doc
+ * sites read as one body of documentation and not as eight separate ones.
  */
 :root {
   --docmd-color-primary: #0d9488;
