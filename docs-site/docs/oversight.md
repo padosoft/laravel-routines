@@ -19,7 +19,7 @@ supposed to do quietly does not happen.
 A panel can show it, because a panel is outside. This is that queue — the one screen whose whole
 job is to make a non-event visible:
 
-![The «awaiting you» queue in laravel-routines-admin](assets/laravel-routines-attention.png)
+![The «awaiting you» queue in laravel-routines-admin](/assets/laravel-routines-attention.png)
 
 But a queue only helps someone who opens it. Nothing in this package can *detect* the silence,
 because from inside there is nothing wrong.

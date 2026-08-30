@@ -12,7 +12,7 @@ che non erano autorizzate a fare, si fermano e chiedono.**
 
 </div>
 
-![Il pannello di laravel-routines](docs/assets/laravel-routines-dashboard.png)
+![Il pannello di laravel-routines](docs-site/assets/laravel-routines-dashboard.png)
 
 <div align="center"><sub>
 
@@ -390,7 +390,7 @@ incontrato qualcosa che il loro mandato non copre. Non sono fallimenti — stann
 quello per cui sono state scritte — e per questo **non compaiono in nessun log di errore e non fanno
 scattare nessun monitor**. L'unico posto dove si vedono è una coda che qualcuno guarda.
 
-![In attesa di te](docs/assets/laravel-routines-attention.png)
+![In attesa di te](docs-site/assets/laravel-routines-attention.png)
 
 Il pannello si adatta anche al telefono, che è dove capita di leggere «una routine ti sta
 aspettando» mentre non si è alla scrivania.

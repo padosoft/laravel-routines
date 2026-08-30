@@ -1,0 +1,194 @@
+{
+  "title": "Laravel Routines",
+  "url": "https://doc.laravel-routines.padosoft.com",
+  "src": "docs",
+  "out": "_site",
+  "base": "/",
+  "favicon": "assets/favicon.svg",
+  "theme": {
+    "name": "default",
+    "defaultMode": "dark",
+    "customCss": [
+      "assets/custom.css"
+    ]
+  },
+  "autoTitleFromH1": true,
+  "copyCode": true,
+  "pageNavigation": true,
+  "minify": true,
+  "layout": {
+    "spa": true,
+    "header": {
+      "enabled": true
+    },
+    "sidebar": {
+      "collapsible": true,
+      "defaultCollapsed": false
+    },
+    "optionsMenu": {
+      "position": "header",
+      "components": {
+        "search": true,
+        "themeSwitch": true
+      }
+    }
+  },
+  "navigation": [
+    {
+      "title": "Get Started",
+      "icon": "rocket",
+      "children": [
+        {
+          "title": "Introduction",
+          "path": "/"
+        },
+        {
+          "title": "Getting started",
+          "path": "/getting-started"
+        }
+      ]
+    },
+    {
+      "title": "Concepts",
+      "icon": "square-function",
+      "children": [
+        {
+          "title": "Triggers",
+          "path": "/triggers",
+          "icon": "alarm-clock"
+        },
+        {
+          "title": "Targets",
+          "path": "/targets",
+          "icon": "crosshair"
+        },
+        {
+          "title": "Mandate",
+          "path": "/mandate",
+          "icon": "shield-check"
+        }
+      ]
+    },
+    {
+      "title": "Operating it",
+      "icon": "book-open",
+      "children": [
+        {
+          "title": "Guarantees",
+          "path": "/guarantees",
+          "icon": "lock"
+        },
+        {
+          "title": "Oversight",
+          "path": "/oversight",
+          "icon": "eye"
+        },
+        {
+          "title": "Admin API",
+          "path": "/admin-api",
+          "icon": "plug"
+        }
+      ]
+    },
+    {
+      "title": "Links",
+      "children": [
+        {
+          "title": "GitHub",
+          "path": "https://github.com/padosoft/laravel-routines",
+          "external": true
+        },
+        {
+          "title": "Packagist",
+          "path": "https://packagist.org/packages/padosoft/laravel-routines",
+          "external": true
+        },
+        {
+          "title": "The panel",
+          "path": "https://github.com/padosoft/laravel-routines-admin",
+          "external": true
+        }
+      ]
+    }
+  ],
+  "footer": {
+    "style": "minimal",
+    "branding": true,
+    "content": "© Lorenzo Padovani — [Padosoft](https://github.com/padosoft) · [GitHub](https://github.com/padosoft/laravel-routines) · MIT",
+    "columns": [
+      {
+        "title": "Project",
+        "links": [
+          {
+            "title": "GitHub",
+            "path": "https://github.com/padosoft/laravel-routines",
+            "external": true
+          },
+          {
+            "title": "Packagist",
+            "path": "https://packagist.org/packages/padosoft/laravel-routines",
+            "external": true
+          },
+          {
+            "title": "laravel-routines-admin",
+            "path": "https://github.com/padosoft/laravel-routines-admin",
+            "external": true
+          }
+        ]
+      },
+      {
+        "title": "Ecosystem",
+        "links": [
+          {
+            "title": "laravel-iam-agents",
+            "path": "https://doc.laravel-iam-agents.padosoft.com",
+            "external": true
+          },
+          {
+            "title": "laravel-flow",
+            "path": "https://doc.laravel-flow.padosoft.com",
+            "external": true
+          },
+          {
+            "title": "laravel-iam-server",
+            "path": "https://doc.laravel-iam-server.padosoft.com",
+            "external": true
+          }
+        ]
+      }
+    ]
+  },
+  "plugins": {
+    "search": {
+      "enabled": true,
+      "placeholder": "Search the docs…"
+    },
+    "git": {
+      "repo": "https://github.com/padosoft/laravel-routines",
+      "branch": "main",
+      "editLink": true,
+      "lastUpdated": true,
+      "commitHistory": true,
+      "dateFormat": "relative"
+    },
+    "seo": {
+      "defaultDescription": "Scheduled automations that run when nobody is watching — and that stop and ask when they hit something they were not authorized to do.",
+      "aiBots": true,
+      "openGraph": {},
+      "twitter": {
+        "cardType": "summary_large_image"
+      }
+    },
+    "sitemap": {
+      "defaultChangefreq": "weekly",
+      "defaultPriority": 0.8
+    },
+    "mermaid": {},
+    "llms": {
+      "fullContext": true
+    },
+    "analytics": {
+      "enabled": false
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "laravel-routines-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Documentation site for padosoft/laravel-routines, built with docmd.",
+  "type": "module",
+  "scripts": {
+    "dev": "docmd dev",
+    "build": "docmd build",
+    "check": "node scripts/check-no-raw-html.mjs"
+  },
+  "devDependencies": {
+    "@docmd/core": "^0.8.6"
+  }
+}
