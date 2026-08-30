@@ -5,7 +5,7 @@ description: Scheduled automations that run when nobody is watching — and that
 
 # Laravel Routines
 
-![The laravel-routines panel](assets/laravel-routines-dashboard.png)
+![The laravel-routines panel](/assets/laravel-routines-dashboard.png)
 
 `padosoft/laravel-routines` runs **scheduled automations**: a report every weekday at 6, a sync
 every hour, an agent that reviews orders every Monday. They run when the user is not there. That is

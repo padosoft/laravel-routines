@@ -113,7 +113,7 @@ composer require padosoft/laravel-routines-admin
 php artisan vendor:publish --tag=routines-admin-assets
 ```
 
-![The panel's overview screen](assets/laravel-routines-dashboard.png)
+![The panel's overview screen](/assets/laravel-routines-dashboard.png)
 
 The separation is deliberate. If the panel is replaced tomorrow the API stays, and with it every
 integration built on top — the same split `laravel-iam-console` has from `laravel-iam-server`.
