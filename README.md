@@ -2,8 +2,8 @@
 
 # laravel-routines
 
-**Automazioni programmate che girano quando non c'è nessuno — e che, quando incontrano qualcosa
-che non erano autorizzate a fare, si fermano e chiedono.**
+**Scheduled automations that run when nobody is there — and that stop and ask when they hit
+something they were not authorized to do.**
 
 [![Tests](https://github.com/padosoft/laravel-routines/actions/workflows/tests.yml/badge.svg)](https://github.com/padosoft/laravel-routines/actions/workflows/tests.yml)
 [![Latest Version](https://img.shields.io/packagist/v/padosoft/laravel-routines.svg)](https://packagist.org/packages/padosoft/laravel-routines)
@@ -12,73 +12,74 @@ che non erano autorizzate a fare, si fermano e chiedono.**
 
 </div>
 
-![Il pannello di laravel-routines](docs-site/assets/laravel-routines-dashboard.png)
+![The laravel-routines panel](docs-site/assets/laravel-routines-dashboard.png)
 
 <div align="center"><sub>
 
-Il pannello è il pacchetto companion **[`padosoft/laravel-routines-admin`](https://github.com/padosoft/laravel-routines-admin)** — React + Vite + Tailwind, interamente sull'Admin API di questo pacchetto.
+The panel is the companion package **[`padosoft/laravel-routines-admin`](https://github.com/padosoft/laravel-routines-admin)** — React + Vite + Tailwind, built entirely on this package's Admin API.
 
 </sub></div>
 
 ---
 
-## Il problema delle 3 di notte
+## The 3am problem
 
-Una routine è un'automazione che gira **quando l'utente non c'è**. È tutto il suo valore, ed è
-anche tutto il suo problema.
+A routine is an automation that runs **when the user is not there**. That is its entire value, and
+its entire problem.
 
-Il resto dell'ecosistema Padosoft è costruito su un invariante preciso: **un agente propone,
-l'utente conferma a schermo, per singola azione.** È la regola che rende sicura la delega
-(`MOBILE-SEC-LLM-001` §6, `laravel-iam-agents`). Ma una routine schedulata alle 3:00 non ha nessuno
-a cui chiedere. Le automazioni esistenti risolvono la contraddizione in uno dei due modi peggiori:
+The rest of the Padosoft ecosystem rests on one invariant: **an agent proposes, the user confirms
+on screen, per action.** It is the rule that makes delegation safe (`MOBILE-SEC-LLM-001` §6,
+`laravel-iam-agents`). But a routine scheduled for 3am has nobody to ask. Existing automation
+resolves the contradiction in one of the two worst ways:
 
-| Come lo risolvono gli altri | Cosa significa davvero |
+| How everyone else resolves it | What it actually means |
 |---|---|
-| Gira con le **credenziali dell'applicazione** (service account) | L'automazione può fare *tutto*, per sempre. Nessun utente è responsabile, e l'audit dice "system". |
-| Gira con **il token dell'utente**, salvato | L'utente ha consegnato la propria identità a un processo che agirà a tempo indeterminato, senza vederlo. |
+| Runs with **application credentials** (service account) | The automation can do *everything*, forever. No user is accountable, and the audit says "system". |
+| Runs with **the user's stored token** | The user handed their identity to a process that will act indefinitely, unwatched. |
 
-Nessuna delle due è una risposta. **Questo pacchetto ne dà una terza.**
+Neither is an answer. **This package gives a third one.**
 
-### Il mandato permanente, e la pausa
+### The standing mandate, and the pause
 
-Una routine porta con sé un **mandato**: un consenso permanente ma **più stretto** di quello
-interattivo, vincolato a *(bersaglio, classi di azione, tetto di spesa, finestra temporale)* e
-legato crittograficamente al digest canonico del payload approvato.
+A routine carries a **mandate**: a consent that is standing but **narrower** than the interactive
+one, bound to *(target, action classes, spend ceiling, time window)* and tied cryptographically to
+the canonical digest of the approved payload.
 
-Finché la routine resta dentro il mandato, gira da sola. Quando lo eccede — un ordine da 1.200 €
-quando il mandato ne copre 500 — **non fallisce e non procede**: si mette in `paused`, e la
-richiesta di approvazione parte verso l'umano su un canale reale (`laravel-rebel-channels`:
-Telegram, WhatsApp, SMS, voce). La persona risponde, il fire **riprende da dov'era**, non da capo.
+While the routine stays inside its mandate, it runs alone. When it exceeds it — a €1,200 order when
+the mandate covers 500 — it **neither fails nor proceeds**: it goes `paused`, and the approval
+request goes out to a human on a real channel (`laravel-rebel-channels`: Telegram, WhatsApp, SMS,
+voice). The person answers, and the fire **resumes where it stopped**, not from the beginning.
 
 ```
-mandato ─────────────► gira da sola, nessuno viene disturbato
+mandate ─────────────► runs alone, nobody is disturbed
    │
-   └── eccesso ──► paused ──► escalation multicanale ──► conferma ──► resume
+   └── exceeded ──► paused ──► multi-channel escalation ──► confirm ──► resume
                       │
-                      └── nessuna risposta ──► resta ferma. Non agisce senza permesso.
+                      └── no answer ──► it stays put. It does not act without permission.
 ```
 
-Che l'ultima riga sia il comportamento di default è il punto: il fallimento sicuro è **fermarsi**,
-non "procedere perché tanto era quasi dentro i limiti".
+That the last line is the default behaviour is the whole point: the safe failure is **stopping**,
+not "going ahead because it was almost within the limits anyway".
 
 ---
 
-## Cosa fa, in breve
+## What it does, briefly
 
-- **Trigger**: cron (nel fuso del proprietario), one-shot, manuale, evento applicativo, webhook firmato.
-- **Bersagli estensibili**: il core non sa cosa lancia. Un job, un flow, un agente, una query — chi
-  conosce il dominio registra un `RoutineTarget` dal proprio provider, e il core non cambia di una riga.
-- **Garanzie di esecuzione**: lock con TTL, idempotenza garantita dal database, catch-up delle
-  occorrenze perse con tetto, backoff esponenziale, politiche di sovrapposizione.
-- **Ora legale gestita davvero** — in entrambe le direzioni, e pinnata da test (vedi sotto).
-- **Ledger dei fire**: ogni esecuzione è un fatto immutabile con esito, costo, durata, motivo e
-  chiave di idempotenza. È evidenza, non un log.
-- **Identità delegata** (fase 2): la routine gira come *l'utente, tramite l'agente* — `sub` +
-  `act` — con l'autorità che è l'**intersezione stretta** dei due, valutata a ogni fire.
+- **Triggers**: cron (in the owner's timezone), one-shot, manual, application event, signed webhook.
+- **Extensible targets**: the core does not know what it launches. A job, a flow, an agent, a query
+  — whoever owns the domain registers a `RoutineTarget` from their own provider, and the core does
+  not change by a line.
+- **Execution guarantees**: locks with a TTL, idempotency enforced by the database, capped catch-up
+  of missed occurrences, exponential backoff, overlap policies.
+- **Daylight saving handled for real** — in both directions, and pinned by tests (see below).
+- **Fire ledger**: every execution is an immutable fact with outcome, cost, duration, reason and
+  idempotency key. It is evidence, not a log.
+- **Delegated identity** (phase 2): the routine runs as *the user, through the agent* — `sub` +
+  `act` — with authority that is the **strict intersection** of the two, re-evaluated on every fire.
 
 ---
 
-## Installazione
+## Installation
 
 ```bash
 composer require padosoft/laravel-routines
@@ -86,8 +87,8 @@ php artisan vendor:publish --tag=routines-migrations
 php artisan migrate
 ```
 
-Il tick si registra da solo nello scheduler di Laravel (`routines.tick.schedule`). Serve solo che
-lo scheduler giri:
+The tick registers itself with Laravel's scheduler (`routines.tick.schedule`). All you need is the
+scheduler running:
 
 ```bash
 * * * * * cd /path-to-app && php artisan schedule:run >> /dev/null 2>&1
@@ -95,9 +96,9 @@ lo scheduler giri:
 
 ---
 
-## Cinque minuti
+## Five minutes
 
-### 1. Scrivi un bersaglio
+### 1. Write a target
 
 ```php
 use Padosoft\Routines\Contracts\Target\{RoutineTarget, TargetDescriptor, TargetResult, ValidationResult};
@@ -110,10 +111,10 @@ final class SendDigestTarget implements RoutineTarget
     public function descriptor(): TargetDescriptor
     {
         return new TargetDescriptor(
-            label: 'Digest via email',
-            summary: 'Manda il riepilogo del periodo a un indirizzo.',
-            fields: ['email' => ['label' => 'Destinatario', 'type' => 'email', 'required' => true]],
-            actionClasses: ['email.send'],   // ciò che l'utente autorizza al consenso
+            label: 'Digest by email',
+            summary: 'Sends the period summary to an address.',
+            fields: ['email' => ['label' => 'Recipient', 'type' => 'email', 'required' => true]],
+            actionClasses: ['email.send'],   // what the user authorizes at consent time
             reportsCost: true,
         );
     }
@@ -122,116 +123,115 @@ final class SendDigestTarget implements RoutineTarget
     {
         return filter_var($payload['email'] ?? '', FILTER_VALIDATE_EMAIL)
             ? ValidationResult::valid()
-            : ValidationResult::invalid(['email' => ['Indirizzo non valido.']]);
+            : ValidationResult::invalid(['email' => ['Not a valid address.']]);
     }
 
     public function fire(RoutineExecution $execution): TargetResult
     {
-        // La chiave di idempotenza arriva dal core ed è STABILE attraverso i retry:
-        // è ciò che impedisce alla seconda email di partire dopo un timeout.
+        // The idempotency key comes from the core and is STABLE across retries:
+        // it is what stops the second email from going out after a timeout.
         Mail::to($execution->payload('email'))->send(
             new Digest($execution->scheduledFor, $execution->timezone, $execution->idempotencyKey)
         );
 
-        return TargetResult::succeeded('Digest inviato.', cost: 0.001);
+        return TargetResult::succeeded('Digest sent.', cost: 0.001);
     }
 }
 ```
 
-Registralo dal tuo service provider:
+Register it from your service provider:
 
 ```php
 $this->app->make(TargetRegistry::class)->register(new SendDigestTarget);
 ```
 
-### 2. Crea la routine
+### 2. Create the routine
 
 ```php
 $routine = app(RoutineManager::class)->create([
     'owner'          => 'user:'.$user->id,
-    'name'           => 'Digest del mattino',
+    'name'           => 'Morning digest',
     'target_type'    => 'digest',
     'target_payload' => ['email' => $user->email],
     'trigger_kind'   => 'cron',
     'cron'           => '0 6 * * 1-5',
-    'timezone'       => 'Europe/Rome',   // le SUE 6:00, non le 6:00 UTC
+    'timezone'       => 'Europe/Rome',   // THEIR 6am, not 6am UTC
     'budget_per_run' => 0.50,
     'max_attempts'   => 3,
 ]);
 
 app(RoutineManager::class)->preview($routine, 5);
-// ["2026-09-01 06:00", "2026-09-02 06:00", …] — nel fuso del proprietario
+// ["2026-09-01 06:00", "2026-09-02 06:00", …] — in the owner's timezone
 ```
 
-Il payload è validato **adesso**, mentre c'è un umano davanti al form. Un payload rotto scoperto al
-primo fire delle 3:00 è un fallimento silenzioso dentro un log che nessuno legge.
+The payload is validated **now**, while there is a human in front of the form. A broken payload
+discovered on the first 3am fire is a silent failure inside a log nobody reads.
 
 ---
 
-## Gli altri modi di far partire una routine
+## The other ways to fire a routine
 
-Il cron è il più comune, non l'unico. Ognuno degli altri porta con sé una domanda che va decisa
-una volta e bene: **quando due arrivi sono lo stesso fatto, e quando sono due fatti.**
+Cron is the most common one, not the only one. Each of the others carries a question that has to be
+decided once, and well: **when are two arrivals the same fact, and when are they two facts.**
 
-### Su un evento dell'applicazione
+### On an application event
 
 ```php
-// Dal tuo EventServiceProvider
+// From your EventServiceProvider
 Event::listen(OrderPlaced::class, function (OrderPlaced $event): void {
     app(EventTrigger::class)->handle('order.placed', $event);
 });
 ```
 
-Ogni emissione riceve una chiave nuova, di default. **Deduplicare due `OrderPlaced` sarebbe peggio
-che eseguirli due volte**: significherebbe non spedire un ordine. Se il tuo evento *può* arrivare
-due volte per lo stesso fatto — una consegna at-least-once da una coda — esponi
-`idempotencyKey(): string` sull'evento e la deduplicazione avviene. È il mittente a saperlo: qui
-non c'è modo di indovinarlo.
+Every emission gets a fresh key by default. **Deduplicating two `OrderPlaced` would be worse than
+running them twice**: it would mean not shipping an order. If your event *can* arrive twice for the
+same fact — an at-least-once delivery from a queue — expose `idempotencyKey(): string` on the event
+and deduplication happens. The sender is the one who knows: there is no way to guess it here.
 
-Dall'oggetto evento passa **solo ciò che è scalare**. L'input finisce nel ledger, e un model intero
-ci porterebbe relazioni e talvolta dati che non devono uscire. Serve di più? Esponi
-`toRoutineInput(): array` e decidi tu cosa esce.
+From the event object, only **scalars** are passed through. The input goes into the ledger, and a
+whole model would drag relations along with it, and sometimes data that must not leave. Need more?
+Expose `toRoutineInput(): array` and decide yourself what goes out.
 
-### Da un webhook firmato
+### From a signed webhook
 
 ```php
 $secret = app(RoutineManager::class)->rotateWebhookSecret($routine);
-// Restituito in chiaro UNA VOLTA: da qui in poi esiste solo cifrato in colonna.
+// Returned in clear ONCE: from here on it only exists encrypted in its column.
 ```
 
-Il mittente firma con HMAC-SHA256 e chiama `POST /hooks/routines/{id}`:
+The sender signs with HMAC-SHA256 and calls `POST /hooks/routines/{id}`:
 
 ```
 X-Routines-Timestamp: 1788000000
-X-Routines-Signature: <hmac_sha256("{timestamp}.{corpo grezzo}", secret)>
-X-Routines-Delivery:  <id di consegna>       ← diventa la chiave di idempotenza
+X-Routines-Signature: <hmac_sha256("{timestamp}.{raw body}", secret)>
+X-Routines-Delivery:  <delivery id>       ← becomes the idempotency key
 ```
 
-La rotta sta **fuori dal guard di sessione**: la chiama una macchina, che non ha cookie né CSRF e
-non deve averne. La firma è l'unica autenticazione, quindi ogni dettaglio della verifica è una
-difesa il cui fallimento sarebbe silenzioso:
+The route sits **outside the session guard**: a machine calls it, and a machine has no cookie and no
+CSRF token, and must not need one. The signature is the only authentication, so every detail of the
+verification is a defence whose failure would be silent:
 
-| Scelta | Cosa impedisce |
+| Choice | What it prevents |
 |---|---|
-| Si firma il corpo **grezzo**, non il JSON riserializzato | Un `+` normalizzato farebbe fallire ogni consegna legittima — o passarne una che non doveva |
-| `hash_equals`, mai `===` | Un confronto che esce al primo byte diverso racconta, nei tempi, quanti byte erano giusti |
-| Finestra di 5 minuti sul timestamp **firmato** | Una consegna intercettata resterebbe valida per sempre, rigiocabile fra un anno |
-| L'id di consegna è la chiave | Le consegne webhook sono at-least-once **per costruzione**: il mittente garantisce "almeno una", mai "esattamente una" |
-| Routine inesistente e routine senza segreto → **stessa risposta** | Distinguerle direbbe a chi prova gli id quali esistono |
+| The **raw** body is signed, not the re-serialised JSON | A normalised `+` would fail every legitimate delivery — or let through one that should not have been |
+| `hash_equals`, never `===` | A comparison that returns on the first differing byte tells you, in its timing, how many bytes were right |
+| A 5-minute window on the **signed** timestamp | An intercepted delivery would stay valid forever, replayable a year from now |
+| The delivery id is the key | Webhook deliveries are at-least-once **by construction**: the sender guarantees "at least one", never "exactly one" |
+| Unknown routine and routine without a secret → **the same response** | Telling them apart would tell anyone probing ids which ones exist |
 
-Una routine in pausa risponde invece `409`, non `403`: la firma era giusta, e chi chiama deve poter
-distinguere «non sei autorizzato» da «è ferma».
+A paused routine answers `409` instead, not `403`: the signature was right, and the caller must be
+able to tell "you are not authorized" from "it is stopped".
 
-Il segreto è **cifrato** a riposo, non hashato — per verificare un HMAC serve il segreto vero al
-momento del confronto, quindi il massimo ottenibile è che un dump del database non lo consegni.
+The secret is **encrypted** at rest, not hashed — verifying an HMAC needs the real secret at
+comparison time, so the most that can be achieved is that a database dump does not hand it over.
 
 ---
 
-## Tetti di spesa
+## Spend ceilings
 
-Gli scope limitano **cosa** una routine può fare; il tetto limita **quanto**. È la seconda difesa,
-ed è quella che manca ovunque: una routine perfettamente autorizzata a "mandare email", chiamata
-mille volte da un ciclo impazzito, non ha violato nessun permesso — ha solo mandato mille email.
+Scopes limit **what** a routine may do; the ceiling limits **how much**. It is the second defence,
+and it is the one missing everywhere: a routine perfectly authorized to "send email", called a
+thousand times by a runaway loop, has violated no permission — it has just sent a thousand emails.
 
 ```php
 'budget_per_run'    => 0.50,
@@ -239,246 +239,245 @@ mille volte da un ciclo impazzito, non ha violato nessun permesso — ha solo ma
 'budget_period'     => 'month',   // day | week | month
 ```
 
-Il tetto si controlla **prima e dopo** ogni fire: solo a monte non basta (il primo sforamento
-arriva da un fire che a monte era ancora dentro), solo a valle scopre lo sforamento quando i soldi
-sono già spesi. A tetto esaurito la routine si **sospende**, non salta: saltare vorrebbe dire
-ritrovare lo stesso tetto superato ogni ora per tutto il resto del mese.
+The ceiling is checked **before and after** every fire: before alone is not enough (the first
+overrun comes from a fire that was still inside beforehand), after alone discovers the overrun once
+the money is already spent. On an exhausted ceiling the routine **suspends** rather than skipping:
+skipping would mean meeting the same exceeded ceiling every hour for the rest of the month.
 
-Il periodo si calcola **nel fuso del proprietario** — "questo mese" per chi vive a Roma comincia
-due ore prima che a Greenwich — e il messaggio dice **quando riparte**, perché senza, l'unica
-azione che resta a chi legge è alzare il tetto, che spesso non è la cosa giusta da fare.
+The period is computed **in the owner's timezone** — "this month" for someone living in Rome starts
+two hours before it does in Greenwich — and the message says **when it resumes**, because without
+that the only action left to the reader is to raise the ceiling, which is often not the right thing
+to do.
 
 ---
 
-## Le decisioni che contano
+## The decisions that matter
 
-Un pacchetto di scheduling si giudica su cinque casi limite. Sono tutti pinnati da test.
+A scheduling package is judged on five edge cases. All five are pinned by tests.
 
-### Un tick saltato non perde un'esecuzione
+### A missed tick does not lose an execution
 
-Il dispatcher chiede *«cosa è scaduto»* (`next_run_at <= now`), **mai** *«quale cron corrisponde a
-questo minuto»*. Un deploy di sei minuti non fa sparire l'occorrenza delle 6:03: la trova al tick
-successivo. Chi calcola dal tick perde esecuzioni in silenzio — il modo peggiore di perderle.
+The dispatcher asks *"what is due"* (`next_run_at <= now`), **never** *"which cron matches this
+minute"*. A six-minute deploy does not make the 6:03 occurrence disappear: it is found on the next
+tick. Anything that computes from the tick loses executions silently — the worst way to lose them.
 
-### Due worker producono un fire, non due
+### Two workers produce one fire, not two
 
-Il lock è una `UPDATE` condizionale — l'arbitro è il database, non un `if`. E l'unique su
-`(routine_id, idempotency_key, attempt)` chiude anche la race che il lock non ha visto: il secondo
-inserimento fallisce e quel tick si ritira in silenzio. **È una garanzia di schema, non di codice.**
+The lock is a conditional `UPDATE` — the arbiter is the database, not an `if`. And the unique on
+`(routine_id, idempotency_key, attempt)` also closes the race the lock did not see: the second
+insert fails and that tick withdraws quietly. **It is a schema guarantee, not a code one.**
 
-Il lock ha un TTL, e serve al caso che nessuno considera: il worker che **muore col lock in mano**.
-Senza TTL quella routine resta ferma per sempre, e non c'è nessun errore da nessuna parte.
+The lock has a TTL, and it exists for the case nobody considers: the worker that **dies holding the
+lock**. Without a TTL that routine stays stopped forever, and there is no error anywhere.
 
-### L'ora legale ha due trappole, e sono diverse fra loro
+### Daylight saving has two traps, and they are different from each other
 
-Quasi tutti gli scheduler ne gestiscono una e ignorano l'altra.
+Almost every scheduler handles one and ignores the other.
 
-| | Cosa succede | Comportamento |
+| | What happens | Behaviour |
 |---|---|---|
-| **Primavera** (29 mar 2026, Roma) | Le 02:30 locali **non esistono** | Il fire scivola alle 03:30 dello stesso giorno. Non si perde. |
-| **Autunno** (25 ott 2026, Roma) | Le 02:30 locali esistono **due volte**, in due istanti UTC distinti | Si ricorda l'ultima occorrenza *locale* eseguita e salta la ripetuta. **Un fire, non due.** |
+| **Spring** (29 Mar 2026, Rome) | 02:30 local **does not exist** | The fire slides to 03:30 the same day. It is not lost. |
+| **Autumn** (25 Oct 2026, Rome) | 02:30 local exists **twice**, at two distinct UTC instants | The last executed *local* occurrence is remembered and the repeat is skipped. **One fire, not two.** |
 
-Succede due volte l'anno e nessuno se lo ricorda: per questo entrambi i casi sono pinnati da test
-che falliscono se la guardia viene tolta.
+It happens twice a year and nobody remembers it: which is why both cases are pinned by tests that
+fail if the guard is removed.
 
-### Un downtime non diventa uno sciame
+### A downtime does not become a swarm
 
-Una routine ogni 5 minuti ferma per un giorno ha 288 occorrenze arretrate, e recuperarle tutte
-significa mandare 288 email in trenta secondi. Il recupero ha un tetto (`catch_up_cap`), e la
-politica è un **campo esplicito** perché è una scelta di dominio: un report giornaliero va
-recuperato, un promemoria delle 9:00 consegnato alle 14:00 è solo rumore (`skip_to_next`).
+A routine running every 5 minutes, stopped for a day, has 288 occurrences behind it, and catching up
+on all of them means sending 288 emails in thirty seconds. Catch-up has a cap (`catch_up_cap`), and
+the policy is an **explicit field** because it is a domain decision: a daily report is worth
+catching up on, a 9am reminder delivered at 2pm is just noise (`skip_to_next`).
 
-### `Paused` non è né successo né fallimento
+### `Paused` is neither success nor failure
 
-`TargetOutcome` ha quattro casi e non tre. Senza il quarto, chi implementa un bersaglio è costretto
-a scegliere fra **procedere senza permesso** e **fallire in silenzio**. Nessuna delle due è ciò che
-deve succedere quando l'automazione incontra qualcosa che il mandato non copre.
+`TargetOutcome` has four cases and not three. Without the fourth, whoever implements a target is
+forced to choose between **proceeding without permission** and **failing silently**. Neither is what
+should happen when an automation meets something its mandate does not cover.
 
 ---
 
-## Confronto
+## Comparison
 
 | | **laravel-routines** | Laravel Scheduler | Cron / Supervisor | n8n · Zapier · Make | Trigger.dev · Inngest | Temporal | ChatGPT Tasks · Claude Routines |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Routine create **a runtime** dagli utenti | ✅ | ❌ *(codice)* | ❌ | ✅ | ✅ | ⚠️ | ✅ |
-| Fuso del **proprietario**, non del server | ✅ | ⚠️ | ❌ | ⚠️ | ⚠️ | ⚠️ | ✅ |
-| Ora legale: **entrambe** le direzioni pinnate | ✅ | ❌ | ❌ | ⚠️ | ⚠️ | ⚠️ | ❓ |
-| Recupero occorrenze perse **con tetto** | ✅ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ❌ |
-| Idempotenza garantita dallo **schema** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
-| **Identità delegata** (`sub` + `act`, intersezione stretta) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Mandato permanente** più stretto del consenso interattivo | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Pausa + escalation multicanale** a un umano | ✅ | ❌ | ❌ | ⚠️ *(approval step)* | ❌ | ⚠️ *(signal)* | ❌ |
-| **Tetto di spesa** per fire e per periodo | ✅ | ❌ | ❌ | ⚠️ *(quota task)* | ⚠️ | ❌ | ❌ |
-| Audit **tamper-evident** hash-chained | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Registro **art. 14 EU AI Act** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Domande senza risposta** rilevate come anomalia | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Contratto del bersaglio **spedito come test** | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ *(SDK test env)* | ❌ |
-| **Self-hosted / sovrano**, nessun per-task pricing | ✅ | ✅ | ✅ | ⚠️ | ❌ | ✅ | ❌ |
+| Routines created **at runtime** by users | ✅ | ❌ *(code)* | ❌ | ✅ | ✅ | ⚠️ | ✅ |
+| The **owner's** timezone, not the server's | ✅ | ⚠️ | ❌ | ⚠️ | ⚠️ | ⚠️ | ✅ |
+| DST: **both** directions pinned | ✅ | ❌ | ❌ | ⚠️ | ⚠️ | ⚠️ | ❓ |
+| Catch-up of missed occurrences **with a cap** | ✅ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ❌ |
+| Idempotency enforced by the **schema** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| **Delegated identity** (`sub` + `act`, strict intersection) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Standing mandate** narrower than interactive consent | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Pause + multi-channel escalation** to a human | ✅ | ❌ | ❌ | ⚠️ *(approval step)* | ❌ | ⚠️ *(signal)* | ❌ |
+| **Spend ceiling** per fire and per period | ✅ | ❌ | ❌ | ⚠️ *(task quota)* | ⚠️ | ❌ | ❌ |
+| **Tamper-evident** hash-chained audit | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **EU AI Act art. 14** register | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Unanswered questions** detected as an anomaly | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Target contract **shipped as tests** | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ *(SDK test env)* | ❌ |
+| **Self-hosted / sovereign**, no per-task pricing | ✅ | ✅ | ✅ | ⚠️ | ❌ | ✅ | ❌ |
 
-Le prime cinque righe sono igiene di scheduling: chi le sbaglia perde o duplica esecuzioni. **Le
-righe centrali non le ha nessun altro**, e non per svista: richiedono un IAM con delega
-(`laravel-iam-agents`), uno step-up con dynamic linking (`laravel-rebel-step-up`), un livello di
-canali (`laravel-rebel-channels`) e un ledger FinOps (`laravel-ai-finops`) — cioè un ecosistema, non
-una feature.
+The first five rows are scheduling hygiene: get them wrong and you lose or duplicate executions.
+**The middle rows nobody else has**, and not by oversight: they require an IAM with delegation
+(`laravel-iam-agents`), a step-up with dynamic linking (`laravel-rebel-step-up`), a channel layer
+(`laravel-rebel-channels`) and a FinOps ledger (`laravel-ai-finops`) — an ecosystem, that is, not a
+feature.
 
-Due meritano una riga a parte, perché descrivono guasti che gli altri sistemi **non possono
-nemmeno vedere**:
+Two deserve a line of their own, because they describe failures the other systems **cannot even
+see**:
 
-- **Domande senza risposta.** Una routine che si è fermata a chiedere e che nessuno ha risposto è il
-  guasto peggiore del sistema, ed è invisibile per costruzione: la routine sta facendo esattamente
-  ciò che deve — non agisce senza permesso — quindi non produce nessun errore, in nessun log, per
-  nessun monitoraggio. `laravel-rebel-ai-guard` la rileva come `routine_approval_starvation`, con la
-  domanda più vecchia in chiaro nel caso, e può sospendere la routine perché smetta di accumularne
-  altre.
-- **Il contratto del bersaglio spedito come test.** Il bersaglio lo scrive chi installa, e nessuna
-  garanzia del motore lo copre. `Testing\TargetContract` rende eseguibili le quattro regole che lo
-  rendono sicuro (vedi [Test](#test)).
+- **Unanswered questions.** A routine that paused to ask and that nobody answered is the worst
+  failure in the system, and it is invisible by construction: the routine is doing exactly what it
+  should — it does not act without permission — so it produces no error, in no log, for no monitor.
+  `laravel-rebel-ai-guard` detects it as `routine_approval_starvation`, carrying the oldest question
+  verbatim in the case, and can suspend the routine so it stops accumulating more.
+- **The target contract shipped as tests.** The target is written by whoever installs the package,
+  and no engine guarantee covers it. `Testing\TargetContract` makes the four rules that keep it safe
+  executable (see [Tests](#tests)).
 
-> **Onestà sullo stato.** Tutto quanto sopra è implementato e coperto da test, con una precisazione:
-> l'**identità delegata** e l'**escalation multicanale** sono *seam* — il pacchetto definisce i
-> contratti (`RoutineDelegationBroker`, `RoutineEscalator`), li chiama nei punti giusti e ha i
-> default che falliscono in modo sicuro; le implementazioni concrete arrivano da
-> `laravel-iam-agents` e `laravel-rebel-channels`. Senza quei pacchetti la routine gira come
-> l'applicazione e la domanda finisce nel log a livello `warning` invece che su Telegram.
+> **Honesty about status.** Everything above is implemented and covered by tests, with one
+> clarification: **delegated identity** and **multi-channel escalation** are *seams* — the package
+> defines the contracts (`RoutineDelegationBroker`, `RoutineEscalator`), calls them at the right
+> points and ships defaults that fail safe; the concrete implementations come from
+> `laravel-iam-agents` and `laravel-rebel-channels`. Without those packages the routine runs as the
+> application, and the question lands in the log at `warning` level instead of on Telegram.
 
 ---
 
-## Architettura
+## Architecture
 
 ```mermaid
 flowchart LR
     subgraph core["laravel-routines"]
-        T["routines:tick<br/><i>ogni minuto</i>"] --> D[RoutineDispatcher]
+        T["routines:tick<br/><i>every minute</i>"] --> D[RoutineDispatcher]
         D -->|"lock TTL + unique"| L[(routine_runs)]
         D --> S[RoutineScheduler]
     end
-    subgraph reg["TargetRegistry — estensibile"]
+    subgraph reg["TargetRegistry — extensible"]
         J[JobTarget]
         F["FlowTarget<br/><i>laravel-flow</i>"]
         A["AgentTarget<br/><i>laravel-flow-ai</i>"]
     end
     D --> reg
     reg -->|paused| E["escalation<br/><i>rebel-channels</i>"]
-    E -->|conferma| D
-    D -.->|"sub + act"| I["laravel-iam-agents<br/><i>intersezione stretta</i>"]
-    D -.->|costo| FO[laravel-ai-finops]
+    E -->|confirm| D
+    D -.->|"sub + act"| I["laravel-iam-agents<br/><i>strict intersection</i>"]
+    D -.->|cost| FO[laravel-ai-finops]
 ```
 
-**Tre pacchetti, un confine netto:**
+**Three packages, one clean boundary:**
 
 | | |
 |---|---|
-| `padosoft/laravel-routines-contracts` | Zero dipendenze. `RoutineTarget`, `RoutineExecution`, `TargetOutcome`, `RoutineMandate`. Chi scrive un bersaglio dipende **solo** da qui. |
-| `padosoft/laravel-routines` | Il motore: schedulazione, dispatch, ledger, registro. |
-| `padosoft/laravel-routines-admin` | Il pannello (React + Vite + Tailwind), interamente su API. |
+| `padosoft/laravel-routines-contracts` | Zero dependencies. `RoutineTarget`, `RoutineExecution`, `TargetOutcome`, `RoutineMandate`. Whoever writes a target depends on **this alone**. |
+| `padosoft/laravel-routines` | The engine: scheduling, dispatch, ledger, registry. |
+| `padosoft/laravel-routines-admin` | The panel (React + Vite + Tailwind), entirely on the API. |
 
-### Il pannello
+### The panel
 
 ```bash
 composer require padosoft/laravel-routines-admin
 php artisan vendor:publish --tag=routines-admin-assets
 ```
 
-[`padosoft/laravel-routines-admin`](https://github.com/padosoft/laravel-routines-admin) è il
-consumatore di riferimento dell'Admin API, **ma non un consumatore privilegiato**: tutto quello che
-fa passa dagli stessi endpoint HTTP disponibili a chiunque altro. Se domani il pannello viene
-sostituito, l'API resta — e con lei ogni integrazione costruita sopra. È la stessa separazione che
-`laravel-iam-console` ha da `laravel-iam-server`.
+[`padosoft/laravel-routines-admin`](https://github.com/padosoft/laravel-routines-admin) is the
+reference consumer of the Admin API, **but not a privileged one**: everything it does goes through
+the same HTTP endpoints available to anything else. If the panel is replaced tomorrow the API
+stays, and with it every integration built on top. It is the same separation `laravel-iam-console`
+has from `laravel-iam-server`.
 
-La schermata che dà il nome al prodotto è questa: le routine che si sono fermate perché hanno
-incontrato qualcosa che il loro mandato non copre. Non sono fallimenti — stanno facendo esattamente
-quello per cui sono state scritte — e per questo **non compaiono in nessun log di errore e non fanno
-scattare nessun monitor**. L'unico posto dove si vedono è una coda che qualcuno guarda.
+The screen the product is named for is this one: the routines that stopped because they met
+something their mandate does not cover. They are not failures — they are doing exactly what they
+were written to do — and that is precisely why they **appear in no error log and trip no monitor**.
+The only place they show up is a queue somebody looks at.
 
-![In attesa di te](docs-site/assets/laravel-routines-attention.png)
+![Awaiting you](docs-site/assets/laravel-routines-attention.png)
 
-Il pannello si adatta anche al telefono, che è dove capita di leggere «una routine ti sta
-aspettando» mentre non si è alla scrivania.
+The panel also adapts to a phone, which is where "a routine is waiting for you" tends to be read —
+away from a desk.
 
 ---
 
-## Configurazione
+## Configuration
 
 ```php
 // config/routines.php
-'lock_seconds'       => 900,   // più lungo del fire più lento che ti aspetti
-'catch_up_cap'       => 25,    // un downtime non deve diventare uno sciame
-'retry_base_seconds' => 60,    // backoff esponenziale: 1', 2', 4', 8'…
+'lock_seconds'       => 900,   // longer than the slowest fire you expect
+'catch_up_cap'       => 25,    // a downtime must not become a swarm
+'retry_base_seconds' => 60,    // exponential backoff: 1', 2', 4', 8'…
 
 'targets' => [
     'job' => [
         'enabled' => true,
-        // Vuoto per default, ed è deliberato.
+        // Empty by default, and deliberately so.
         'allowed' => [App\Jobs\SendDailyDigest::class],
     ],
 ],
 ```
 
-### Perché l'allow-list dei job non è una precauzione
+### Why the job allow-list is not a precaution
 
-Il payload di una routine è **dato**: arriva da un form, può arrivare da un import, e in fase 3 può
-arrivare da un assistente che l'ha proposta. Istanziare la classe che ci si trova dentro
-significherebbe dare a quel dato il diritto di eseguire **qualsiasi cosa esista
-nell'applicazione**. Per questo i job schedulabili si dichiarano, e l'allow-list si ricontrolla
-**anche al fire**: una routine creata quando un job era permesso non deve continuare a girare dopo
-che è stato tolto.
+A routine's payload is **data**: it comes from a form, it can come from an import, and in phase 3 it
+can come from an assistant that proposed it. Instantiating whatever class is found inside would give
+that data the right to execute **anything that exists in the application**. That is why schedulable
+jobs are declared, and why the allow-list is re-checked **at fire time too**: a routine created when
+a job was permitted must not keep running after it has been removed.
 
 ---
 
-## Comandi
+## Commands
 
 ```bash
-php artisan routines:tick --limit=100   # un giro (di norma lo chiama lo scheduler)
+php artisan routines:tick --limit=100   # one pass (normally called by the scheduler)
 php artisan routines:list --status=active
 ```
 
 ---
 
-## Eventi
+## Events
 
-| Evento | Quando |
+| Event | When |
 |---|---|
-| `RoutineFired` | Prima del lavoro — chi ascolta può ancora fermarlo lanciando |
-| `RoutineFinished` | Esito noto, **qualunque** esso sia (uno solo, così nessuno se ne dimentica uno) |
-| `RoutinePaused` | Serve un umano. È qui che si aggancia l'escalation |
-| `RoutineSuspended` | Il sistema l'ha fermata: bersaglio sparito, budget esaurito, anomalia |
-| `RoutineResolved` | Un umano ha risposto. Emesso **prima** che il lavoro riprenda: chi registra la decisione non deve aspettarne l'esito |
-| `RoutineMandateGranted` | Concesso il consenso permanente, con la sua evidenza (confirmation id, AAL) |
+| `RoutineFired` | Before the work — a listener can still stop it by throwing |
+| `RoutineFinished` | Outcome known, **whatever** it is (one event, so nobody forgets one) |
+| `RoutinePaused` | A human is needed. This is where escalation hooks in |
+| `RoutineSuspended` | The system stopped it: target gone, budget exhausted, anomaly |
+| `RoutineResolved` | A human answered. Dispatched **before** the work resumes: whoever records the decision should not have to wait for its outcome |
+| `RoutineMandateGranted` | Standing consent granted, with its evidence (confirmation id, AAL) |
 
 ---
 
-## Integrazione con l'ecosistema
+## Ecosystem integration
 
-| Pacchetto | Cosa aggiunge |
+| Package | What it adds |
 |---|---|
-| [`laravel-iam-agents`](https://github.com/padosoft/laravel-iam-agents) | La routine gira come *utente tramite agente*; autorità = intersezione stretta, rivalutata a ogni fire |
-| [`laravel-rebel-step-up`](https://github.com/padosoft/laravel-rebel-step-up) | Consenso al mandato ad AAL2 con dynamic linking: cambiare il payload invalida la conferma |
-| [`laravel-rebel-channels`](https://github.com/padosoft/laravel-rebel-channels) | L'escalation su Telegram / WhatsApp / SMS / voce quando una routine si ferma |
-| [`laravel-ai-finops`](https://github.com/padosoft/laravel-ai-finops) | Tetti di spesa per fire e per periodo, con sospensione automatica |
-| [`laravel-flow`](https://github.com/padosoft/laravel-flow) · [`laravel-flow-ai`](https://github.com/padosoft/laravel-flow-ai) | `FlowTarget` e `AgentTarget`: una routine lancia un grafo o un agente |
-| [`laravel-ai-act-compliance`](https://github.com/padosoft/laravel-ai-act-compliance) | Il mandato come record di sorveglianza art. 14 (col digest del payload), la routine nel registro rischi art. 6, ogni pausa tracciata fino alla risposta |
-| [`laravel-rebel-ai-guard`](https://github.com/padosoft/laravel-rebel-ai-guard) | Anomalie sul ledger dei fire: raffica, fallimenti a ripetizione, mandato sondato, e **domande senza risposta** — con sospensione automatica opzionale |
+| [`laravel-iam-agents`](https://github.com/padosoft/laravel-iam-agents) | The routine runs as *user through agent*; authority = strict intersection, re-evaluated on every fire |
+| [`laravel-rebel-step-up`](https://github.com/padosoft/laravel-rebel-step-up) | Mandate consent at AAL2 with dynamic linking: changing the payload invalidates the confirmation |
+| [`laravel-rebel-channels`](https://github.com/padosoft/laravel-rebel-channels) | The escalation over Telegram / WhatsApp / SMS / voice when a routine stops |
+| [`laravel-ai-finops`](https://github.com/padosoft/laravel-ai-finops) | Spend ceilings per fire and per period, with automatic suspension |
+| [`laravel-flow`](https://github.com/padosoft/laravel-flow) · [`laravel-flow-ai`](https://github.com/padosoft/laravel-flow-ai) | `FlowTarget` and `AgentTarget`: a routine launches a graph or an agent |
+| [`laravel-ai-act-compliance`](https://github.com/padosoft/laravel-ai-act-compliance) | The mandate as an art. 14 oversight record (with the payload digest), the routine in the art. 6 risk register, every pause tracked through to its answer |
+| [`laravel-rebel-ai-guard`](https://github.com/padosoft/laravel-rebel-ai-guard) | Anomalies on the fire ledger: bursts, repeated failures, mandate probing, and **unanswered questions** — with optional automatic suspension |
 
-Nessuna è obbligatoria: senza nulla installato, il pacchetto è uno scheduler che non perde e non
-duplica esecuzioni.
+None of them is required: with nothing installed, the package is a scheduler that neither loses nor
+duplicates executions.
 
 ---
 
-## Test
+## Tests
 
 ```bash
 composer test
 ```
 
-I test non coprono il percorso felice — coprono i casi che rompono gli scheduler veri: due worker
-concorrenti, un lock di un worker morto, entrambe le direzioni dell'ora legale, un downtime di sei
-ore, un bersaglio disinstallato, un'eccezione non prevista, un webhook consegnato due volte.
+The tests do not cover the happy path — they cover the cases that break real schedulers: two
+concurrent workers, a dead worker's lock, both directions of daylight saving, a six-hour downtime,
+an uninstalled target, an unexpected exception, a webhook delivered twice.
 
-### Il contratto del tuo bersaglio, in forma eseguibile
+### Your target's contract, in executable form
 
-I test qui sopra provano che il **motore** mantiene le sue garanzie. Il bersaglio lo scrivi tu, e
-le regole che lo rendono sicuro vivrebbero altrimenti solo nella prosa di questo README. Il
-pacchetto ne spedisce la versione eseguibile:
+The tests above prove the **engine** keeps its guarantees. The target is yours to write, and the
+rules that keep it safe would otherwise live only in this README's prose. The package ships the
+executable version of them:
 
 ```php
 use Padosoft\Routines\Testing\TargetContract;
@@ -491,28 +490,28 @@ final class InvoiceReminderTargetTest extends TestCase
             new InvoiceReminderTarget(...),
             validPayload: ['template' => 'reminder'],
             invalidPayload: ['template' => ''],
-            // Il caso «fuori dal mandato» si esprime come input del fire oppure come
-            // configurazione, perche' i bersagli reali decidono in entrambi i modi:
+            // The "outside the mandate" case is expressed either as fire input or as
+            // configuration, because real targets decide in both ways:
             outOfMandatePayload: ['template' => 'reminder', 'write_off_days' => 365],
         );
     }
 }
 ```
 
-Quattro asserzioni, e ciascuna corrisponde a un modo di fallire **in silenzio**:
+Four assertions, and each one matches a way of failing **silently**:
 
-| Asserzione | Il guasto che previene |
+| Assertion | The failure it prevents |
 |---|---|
-| Il payload viene validato, con l'errore sul campo | Un payload rotto scoperto alle 3:00 in un log che nessuno legge, invece che nel form |
-| Il descrittore dichiara le classi di azione | Nessun mandato può autorizzarlo, e nessuna pausa può dire a un umano **che cosa** sta approvando |
-| Riesecuzione alla stessa chiave di idempotenza → stesso esito | Un timeout di rete diventa una seconda email davvero mandata |
-| Fuori dal mandato ci si **ferma** (`paused` o `MandateExceeded`), non si fallisce | Fallire fa arrendere la routine in silenzio; riuscire significa aver agito senza permesso |
+| The payload is validated, with the error on the field | A broken payload discovered at 3am in a log nobody reads, instead of in the form |
+| The descriptor declares its action classes | No mandate can authorize it, and no pause can tell a human **what** they are approving |
+| Re-running on the same idempotency key → the same outcome | A network timeout becomes a second email actually sent |
+| Outside the mandate it **stops** (`paused` or `MandateExceeded`), it does not fail | Failing makes the routine give up quietly; succeeding means it acted without permission |
 
-Ogni asserzione del kit ha, nella suite del pacchetto, un test che la vede **fallire** sul
-bersaglio che la viola: un kit che passa su qualsiasi cosa non prova niente.
+Every assertion in the kit has, in this package's own suite, a test that watches it **fail** against
+a target that violates it: a kit that passes on anything proves nothing.
 
 ---
 
-## Licenza
+## License
 
 MIT © [Padosoft](https://padosoft.com)
