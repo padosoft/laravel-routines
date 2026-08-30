@@ -12,6 +12,14 @@ che non erano autorizzate a fare, si fermano e chiedono.**
 
 </div>
 
+![Il pannello di laravel-routines](docs/assets/laravel-routines-dashboard.png)
+
+<div align="center"><sub>
+
+Il pannello è il pacchetto companion **[`padosoft/laravel-routines-admin`](https://github.com/padosoft/laravel-routines-admin)** — React + Vite + Tailwind, interamente sull'Admin API di questo pacchetto.
+
+</sub></div>
+
 ---
 
 ## Il problema delle 3 di notte
@@ -363,6 +371,29 @@ flowchart LR
 | `padosoft/laravel-routines-contracts` | Zero dipendenze. `RoutineTarget`, `RoutineExecution`, `TargetOutcome`, `RoutineMandate`. Chi scrive un bersaglio dipende **solo** da qui. |
 | `padosoft/laravel-routines` | Il motore: schedulazione, dispatch, ledger, registro. |
 | `padosoft/laravel-routines-admin` | Il pannello (React + Vite + Tailwind), interamente su API. |
+
+### Il pannello
+
+```bash
+composer require padosoft/laravel-routines-admin
+php artisan vendor:publish --tag=routines-admin-assets
+```
+
+[`padosoft/laravel-routines-admin`](https://github.com/padosoft/laravel-routines-admin) è il
+consumatore di riferimento dell'Admin API, **ma non un consumatore privilegiato**: tutto quello che
+fa passa dagli stessi endpoint HTTP disponibili a chiunque altro. Se domani il pannello viene
+sostituito, l'API resta — e con lei ogni integrazione costruita sopra. È la stessa separazione che
+`laravel-iam-console` ha da `laravel-iam-server`.
+
+La schermata che dà il nome al prodotto è questa: le routine che si sono fermate perché hanno
+incontrato qualcosa che il loro mandato non copre. Non sono fallimenti — stanno facendo esattamente
+quello per cui sono state scritte — e per questo **non compaiono in nessun log di errore e non fanno
+scattare nessun monitor**. L'unico posto dove si vedono è una coda che qualcuno guarda.
+
+![In attesa di te](docs/assets/laravel-routines-attention.png)
+
+Il pannello si adatta anche al telefono, che è dove capita di leggere «una routine ti sta
+aspettando» mentre non si è alla scrivania.
 
 ---
 
