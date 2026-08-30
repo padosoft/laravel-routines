@@ -16,7 +16,13 @@ something its mandate does not cover, and it did not act without permission. So 
 exception, writes no error, trips no monitor. It just waits, forever, while the thing it was
 supposed to do quietly does not happen.
 
-Nothing in this package can detect that, because from inside there is nothing wrong.
+A panel can show it, because a panel is outside. This is that queue — the one screen whose whole
+job is to make a non-event visible:
+
+![The «awaiting you» queue in laravel-routines-admin](assets/laravel-routines-attention.png)
+
+But a queue only helps someone who opens it. Nothing in this package can *detect* the silence,
+because from inside there is nothing wrong.
 [`laravel-rebel-ai-guard`](https://github.com/padosoft/laravel-rebel-ai-guard) detects it from the
 outside, by reading the `routine_runs` ledger:
 
